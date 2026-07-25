@@ -1,0 +1,23 @@
+# Files EAS Build should ignore (works like .gitignore).
+# Crucially: .env contains local-dev pk_test_ Clerk keys. If included in the
+# build tarball it overrides the EAS production env vars at build time and
+# the production app ends up pointing at the dev Clerk instance — auth
+# silently fails because that instance isn't reachable from production users.
+
+.env
+.env.local
+.env.development
+.env.test
+
+# Local-dev junk
+.expo/
+dist/
+ios/build/
+android/build/
+node_modules/
+*.log
+.DS_Store
+
+# Editor / IDE
+.vscode/
+.idea/

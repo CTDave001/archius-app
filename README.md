@@ -1,63 +1,52 @@
-# React Native ChatGPT Clone with Clerk & RevenueCat
+# Archius — Mobile App
 
-This is a React Native ChatGPT clone using [Clerk](https://go.clerk.com/wvMHe8T) for user authentication and [RevenueCat](https://www.revenuecat.com/docs/getting-started/installation/reactnative?utm_medium=sponsored&utm_source=youtube&utm_campaign=SimonGrimm) for In-App purchases.
+AI that actually works. Direct, honest AI assistant for iOS and Android. Marketing site: [archius.app](https://archius.app).
 
-Additional features:
+## Stack
 
-- [Expo Router](https://docs.expo.dev/routing/introduction/) file-based navigation and API Routes
-- [OpenAI API](https://platform.openai.com/) for GPT chat completions and image generation
-- [Reanimated](https://docs.swmansion.com/react-native-reanimated/) 3 for animations
-- [Gesture Handler](https://docs.swmansion.com/react-native-gesture-handler/) for gestures
-- [Redash](https://github.com/wcandillon/react-native-redash) for animated text
-- [Zeego](https://zeego.dev/start) for native menus
-- [RN MMKV](https://github.com/mrousavy/react-native-mmkv) for efficient key/value storage
-- [Expo SQLite](https://docs.expo.dev/versions/latest/sdk/sqlite-next/) for storing chats and messages
-- [Bottom Sheet](https://ui.gorhom.dev/components/bottom-sheet/) for bottom sheet component
-- [FlashList](https://shopify.github.io/flash-list/) for efficient list rendering
-- [React Native OpenAI](https://github.com/candlefinance/react-native-openai) for streaming
-- [Image Zoom](https://github.com/likashefqet/react-native-image-zoom) for image zoom component
-- [Shimmer Placeholder](https://github.com/tomzaku/react-native-shimmer-placeholder) for loading placeholders
+- Expo SDK 55 (React Native 0.83, React 19, Reanimated 4)
+- Expo Router (file-based) with API routes for the backend proxy
+- `@clerk/clerk-expo` v2 for auth (email + Apple + Google)
+- `react-native-purchases` v10 (RevenueCat) for in-app purchases
+- Vercel AI SDK (`ai` v6 + `@ai-sdk/openai` + `@ai-sdk/react`)
+- DeepSeek (text) + Google AI Studio / Gemini (images) — keys never bundled; proxied through `/api/chat`
+- SQLite (`expo-sqlite`) for chat history, MMKV v4 for settings
 
-## Screenshots
+## Getting started
 
-<div style="display: flex; flex-direction: 'row';">
-<img src="./screenshots/1.png" width=30%>
-<img src="./screenshots/2.png" width=30%>
-<img src="./screenshots/3.png" width=30%>
-<img src="./screenshots/4.png" width=30%>
-<img src="./screenshots/5.png" width=30%>
-<img src="./screenshots/6.png" width=30%>
-<img src="./screenshots/7.png" width=30%>
-<img src="./screenshots/8.png" width=30%>
-<img src="./screenshots/9.png" width=30%>
-<img src="./screenshots/10.png" width=30%>
-<img src="./screenshots/11.png" width=30%>
-<img src="./screenshots/12.png" width=30%>
-<img src="./screenshots/13.png" width=30%>
-<img src="./screenshots/14.png" width=30%>
-</div>
+```bash
+npm install --legacy-peer-deps
+cp DUMMY.env .env  # then fill in real values
+npx expo start
+```
 
-## Demo
+### Environment variables
 
-<div style="display: flex; flex-direction: 'row';">
-<img src="./screenshots/intro.gif" width=30%>
-<img src="./screenshots/chat.gif" width=30%>
-<img src="./screenshots/context.gif" width=30%>
-<img src="./screenshots/sqlite.gif" width=30%>
-<img src="./screenshots/purchase.gif" width=30%>
-<img src="./screenshots/explore.gif" width=30%>
+Client (safe to bundle):
+- `EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY` — from clerk.com
+- `EXPO_PUBLIC_RC_APPLE_KEY` / `EXPO_PUBLIC_RC_GOOGLE_KEY` — RevenueCat (optional during dev)
+- `EXPO_PUBLIC_API_URL` — optional override for the API base URL
 
-<img src="./screenshots/dalle.gif" width=30%>
-<img src="./screenshots/imagecontext.gif" width=30%>
-<img src="./screenshots/imagezoom.gif" width=30%>
+Server-only (never prefix with `EXPO_PUBLIC_`):
+- `DEEPSEEK_API_KEY` — DeepSeek API key
+- `CLERK_SECRET_KEY` — for verifying JWTs in the API route
 
+## Project structure
 
-</div>
+```
+app/                  Expo Router routes (screens + API)
+  api/chat+api.ts     Server-side proxy to DeepSeek
+  (auth)/             Authenticated routes (drawer, chat, settings, paywall)
+  index.tsx           Landing screen (signed-out)
+  login.tsx           Email login/signup
+  _layout.tsx         Root layout (fonts, Clerk, splash)
+components/           UI components (ChatPage, MessageInput, etc.)
+constants/            Brand tokens (Colors.ts, Styles.ts)
+providers/            React contexts (RevenueCat)
+utils/                Domain logic (Database, ai prompt + models, Interfaces)
+assets/               Brand icons (icon.png, foreground.png, monochrome.png)
+```
 
-## 🚀 More
+## Brand
 
-**Take a shortcut from web developer to mobile development fluency with guided learning**
-
-Enjoyed this project? Learn to use React Native to build production-ready, native mobile apps for both iOS and Android based on your existing web development skills.
-
-<a href="https://galaxies.dev"><img src="banner.png" height="auto" width="100%"></a>
+Source of truth: `ARCHIUS_MOBILE_HANDOFF.md` in the repo root (one level up from this app).

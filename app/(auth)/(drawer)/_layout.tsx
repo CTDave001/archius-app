@@ -1,200 +1,512 @@
-import { Drawer } from 'expo-router/drawer';
-import { DrawerContentScrollView, DrawerItemList, DrawerItem } from '@react-navigation/drawer';
-import { Link, useNavigation, useRouter } from 'expo-router';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import BrandMark from '@/components/BrandMark';
+import PopoverMenu, { type PopoverAnchor, type PopoverItem } from '@/components/PopoverMenu';
+import Colors from '@/constants/Colors';
+import { useRevenueCat } from '@/providers/RevenueCat';
+import { useUser } from '@clerk/clerk-expo';
+import { Ionicons } from '@expo/vector-icons';
+import { tap } from '@/utils/haptics';
 import {
+  DrawerContentScrollView,
+  useDrawerStatus,
+} from '@react-navigation/drawer';
+import { DrawerActions } from '@react-navigation/native';
+import {
+  BUCKET_LABELS,
+  bucketChat,
+  type ChatBucket,
+  deleteChat,
+  getChats,
+  renameChat,
+  searchChats,
+} from '@/utils/Database';
+import { emitChatsChanged, onChatsChanged } from '@/utils/events';
+import { Chat } from '@/utils/Interfaces';
+import { Link, useLocalSearchParams, useRouter } from 'expo-router';
+import { Drawer } from 'expo-router/drawer';
+import { useSQLiteContext } from 'expo-sqlite';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import Swipeable from 'react-native-gesture-handler/Swipeable';
+import {
+  Alert,
   Image,
-  Text,
-  View,
+  Keyboard,
+  KeyboardAvoidingView,
+  Modal,
+  Platform,
+  Pressable,
   StyleSheet,
+  Text,
+  TextInput,
   TouchableOpacity,
   useWindowDimensions,
-  TextInput,
-  Alert,
+  View,
 } from 'react-native';
-import Colors from '@/constants/Colors';
-import { Ionicons } from '@expo/vector-icons';
-import { FontAwesome6 } from '@expo/vector-icons';
-import { DrawerActions } from '@react-navigation/native';
-import { useEffect, useState } from 'react';
-import { getChats, renameChat } from '@/utils/Database';
-import { useSQLiteContext } from 'expo-sqlite/next';
-import { useDrawerStatus } from '@react-navigation/drawer';
-import { Chat } from '@/utils/Interfaces';
-import * as ContextMenu from 'zeego/context-menu';
-import { useRevenueCat } from '@/providers/RevenueCat';
-import { Keyboard } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+
+// Custom chat row with pressable feedback and a visible overflow `…` button
+// that opens an anchored popover menu (not a full-screen action sheet).
+const ChatRow = ({
+  chat,
+  isActive,
+  onPress,
+  onDelete,
+  onOpenMenu,
+}: {
+  chat: Chat;
+  isActive: boolean;
+  onPress: () => void;
+  onDelete: () => void;
+  onOpenMenu: (anchor: PopoverAnchor) => void;
+}) => {
+  const moreRef = useRef<View>(null);
+
+  const openMenu = () => {
+    tap();
+    moreRef.current?.measureInWindow((x, y, width, height) => {
+      onOpenMenu({ x, y, width, height });
+    });
+  };
+
+  return (
+    <Swipeable
+      renderRightActions={() => (
+        <Pressable
+          onPress={onDelete}
+          accessibilityLabel={`Delete ${chat.title}`}
+          style={({ pressed }) => [
+            styles.swipeDeleteAction,
+            pressed && { opacity: 0.85 },
+          ]}>
+          <Ionicons name="trash" size={20} color="#fff" />
+          <Text style={styles.swipeDeleteText}>Delete</Text>
+        </Pressable>
+      )}
+      overshootRight={false}
+      friction={2}>
+      <Pressable
+        onPress={onPress}
+        style={({ pressed }) => [
+          styles.chatRowOuter,
+          isActive && styles.chatRowActive,
+          pressed && !isActive && styles.chatRowPressed,
+        ]}>
+        <Text
+          style={[
+            styles.chatRowTitle,
+            isActive && { fontFamily: 'Inter_600SemiBold', color: Colors.ink },
+          ]}
+          numberOfLines={1}>
+          {chat.title}
+        </Text>
+        <View ref={moreRef} collapsable={false}>
+          <Pressable
+            onPress={openMenu}
+            hitSlop={10}
+            accessibilityLabel={`More actions for ${chat.title}`}
+            style={({ pressed }) => [
+              styles.chatRowMore,
+              pressed && { backgroundColor: Colors.stone },
+            ]}>
+            <Ionicons name="ellipsis-horizontal" size={18} color={Colors.slateSoft} />
+          </Pressable>
+        </View>
+      </Pressable>
+    </Swipeable>
+  );
+};
 
 export const CustomDrawerContent = (props: any) => {
   const { bottom, top } = useSafeAreaInsets();
   const db = useSQLiteContext();
   const isDrawerOpen = useDrawerStatus() === 'open';
-  const [history, setHistory] = useState<Chat[]>([]);
+  type ChatRowData = Chat & { updated_at: string | null };
+  const [history, setHistory] = useState<ChatRowData[]>([]);
+  const [query, setQuery] = useState('');
+  const [renameTarget, setRenameTarget] = useState<{ id: number; title: string } | null>(null);
+  const [renameDraft, setRenameDraft] = useState('');
+  const [menuState, setMenuState] = useState<{ anchor: PopoverAnchor; chat: ChatRowData } | null>(
+    null
+  );
   const router = useRouter();
+  const { user } = useUser();
+  const { isPro } = useRevenueCat();
+  const { id: activeId } = useLocalSearchParams<{ id?: string }>();
+  const displayName =
+    user?.fullName || user?.username || user?.primaryEmailAddress?.emailAddress || 'Account';
 
+  // Reload only when drawer opens (not on close — pointless work) AND on
+  // any in-app chats-changed event (new chat created, message persisted,
+  // title generated, rename, delete). Search-effect handles query changes
+  // separately so we don't fight it with full-list reloads.
   useEffect(() => {
-    loadChats();
-    Keyboard.dismiss();
+    if (isDrawerOpen) {
+      Keyboard.dismiss();
+      if (!query.trim()) loadChats();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isDrawerOpen]);
 
-  const loadChats = async () => {
-    // Load chats from SQLite
-    const result = (await getChats(db)) as Chat[];
-    setHistory(result);
-  };
-
-  const onDeleteChat = (chatId: number) => {
-    Alert.alert('Delete Chat', 'Are you sure you want to delete this chat?', [
-      {
-        text: 'Cancel',
-        style: 'cancel',
-      },
-      {
-        text: 'Delete',
-        onPress: async () => {
-          // Delete the chat
-          await db.runAsync('DELETE FROM chats WHERE id = ?', chatId);
-          loadChats();
-        },
-      },
-    ]);
-  };
-
-  const onRenameChat = (chatId: number) => {
-    Alert.prompt('Rename Chat', 'Enter a new name for the chat', async (newName) => {
-      if (newName) {
-        // Rename the chat
-        await renameChat(db, chatId, newName);
-        loadChats();
-      }
+  useEffect(() => {
+    return onChatsChanged(() => {
+      if (!query.trim()) loadChats();
     });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [query]);
+
+  const loadChats = async () => {
+    try {
+      const result = await getChats(db);
+      setHistory(result as ChatRowData[]);
+    } catch (e) {
+      console.warn('Failed to load chats', e);
+    }
   };
 
+  // When query is non-empty, search both titles and message content with a
+  // small debounce so we don't run a JOIN on every keystroke. When query is
+  // cleared, snap back to the unfiltered list.
+  useEffect(() => {
+    const q = query.trim();
+    if (!q) {
+      loadChats();
+      return;
+    }
+    let cancelled = false;
+    const handle = setTimeout(() => {
+      searchChats(db, q)
+        .then((rows) => {
+          if (!cancelled) setHistory(rows as ChatRowData[]);
+        })
+        .catch(() => undefined);
+    }, 180);
+    return () => {
+      cancelled = true;
+      clearTimeout(handle);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [query]);
+
+  // Group chats by date bucket. Order preserved within each bucket since
+  // getChats() / searchChats() already sort by updated_at desc.
+  const grouped = useMemo(() => {
+    const buckets: { bucket: ChatBucket; chats: ChatRowData[] }[] = [
+      { bucket: 'today', chats: [] },
+      { bucket: 'yesterday', chats: [] },
+      { bucket: 'thisWeek', chats: [] },
+      { bucket: 'earlier', chats: [] },
+    ];
+    for (const chat of history) {
+      const b = bucketChat(chat.updated_at);
+      buckets.find((g) => g.bucket === b)!.chats.push(chat);
+    }
+    return buckets.filter((g) => g.chats.length > 0);
+  }, [history]);
+
+  const onDeleteChat = (chatId: number, chatTitle: string) => {
+    Alert.alert(
+      'Delete chat?',
+      `"${chatTitle}" and all its messages will be permanently removed.`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              await deleteChat(db, chatId);
+              emitChatsChanged();
+              // If we just deleted the chat the user is currently viewing,
+              // bounce them to /new so they're not stuck on a dead route.
+              if (String(chatId) === activeId) {
+                router.replace('/(auth)/(drawer)/(chat)/new');
+              }
+            } catch (e: any) {
+              Alert.alert('Could not delete', e?.message ?? 'Try again later.');
+            }
+          },
+        },
+      ]
+    );
+  };
+
+  const onRenameChat = (chatId: number, currentTitle: string) => {
+    // Cross-platform rename modal. Alert.prompt is iOS-only and doesn't
+    // pre-fill — using our own Modal gives us a TextInput with the current
+    // title pre-populated on both platforms.
+    setRenameTarget({ id: chatId, title: currentTitle });
+    setRenameDraft(currentTitle);
+  };
+
+  const onRenameConfirm = async () => {
+    if (!renameTarget) return;
+    const trimmed = renameDraft.trim();
+    if (!trimmed || trimmed === renameTarget.title) {
+      setRenameTarget(null);
+      return;
+    }
+    try {
+      await renameChat(db, renameTarget.id, trimmed.slice(0, 100));
+      emitChatsChanged();
+    } catch (e: any) {
+      Alert.alert('Could not rename', e?.message ?? 'Try again later.');
+    } finally {
+      setRenameTarget(null);
+    }
+  };
+
+  // DrawerContentScrollView wraps DrawerContentScrollView/SafeAreaView
+  // semantics — it already inserts the top safe-area padding. Adding our
+  // own `marginTop: top` here resulted in double padding (~30pt cream gap
+  // above the search box). Use a plain View and let the inner ScrollView
+  // handle insets.
   return (
-    <View style={{ flex: 1, marginTop: top }}>
-      <View style={{ backgroundColor: '#fff', paddingBottom: 10 }}>
+    <View style={{ flex: 1 }}>
+      <View style={{ backgroundColor: Colors.cream, paddingTop: top, paddingBottom: 10 }}>
         <View style={styles.searchSection}>
-          <Ionicons style={styles.searchIcon} name="search" size={20} color={Colors.greyLight} />
+          <Ionicons style={styles.searchIcon} name="search" size={18} color={Colors.slateSoft} />
           <TextInput
             style={styles.input}
-            placeholder="Search"
+            placeholder="Search chats"
+            placeholderTextColor={Colors.slateSoft}
             underlineColorAndroid="transparent"
+            value={query}
+            onChangeText={setQuery}
+            autoCorrect={false}
+            autoCapitalize="none"
+            clearButtonMode="while-editing"
           />
         </View>
       </View>
 
       <DrawerContentScrollView
         {...props}
-        contentContainerStyle={{ backgroundColor: '#fff', paddingTop: 0 }}>
-        <DrawerItemList {...props} />
-        {history.map((chat) => (
-          <ContextMenu.Root key={chat.id}>
-            <ContextMenu.Trigger>
-              <DrawerItem
-                label={chat.title}
-                onPress={() => router.push(`/(auth)/(drawer)/(chat)/${chat.id}`)}
-                inactiveTintColor="#000"
-              />
-            </ContextMenu.Trigger>
-            <ContextMenu.Content>
-              <ContextMenu.Preview>
-                {() => (
-                  <View style={{ padding: 16, height: 200, backgroundColor: '#fff' }}>
-                    <Text>{chat.title}</Text>
-                  </View>
-                )}
-              </ContextMenu.Preview>
+        contentContainerStyle={{ backgroundColor: Colors.cream, paddingTop: 0 }}>
+        {/* New chat — custom row with proper icon/label spacing (the default
+            DrawerItemList rendering overlapped the mark and the label). */}
+        <Pressable
+          accessibilityLabel="Start a new chat"
+          accessibilityRole="button"
+          onPress={() => {
+            tap();
+            props?.navigation?.closeDrawer?.();
+            router.replace('/(auth)/(drawer)/(chat)/new');
+          }}
+          style={({ pressed }) => [
+            styles.newChatRow,
+            pressed && styles.newChatRowPressed,
+          ]}>
+          <View style={styles.newChatIcon}>
+            <BrandMark size={16} color="#fff" />
+          </View>
+          <Text style={styles.newChatLabel}>New chat</Text>
+          <Ionicons name="create-outline" size={18} color={Colors.slateSoft} />
+        </Pressable>
 
-              <ContextMenu.Item key={'rename'} onSelect={() => onRenameChat(chat.id)}>
-                <ContextMenu.ItemTitle>Rename</ContextMenu.ItemTitle>
-                <ContextMenu.ItemIcon
-                  ios={{
-                    name: 'pencil',
-                    pointSize: 18,
+        {history.length === 0 && query.length > 0 && (
+          <Text style={styles.emptyHint}>No chats match "{query}"</Text>
+        )}
+        {history.length === 0 && query.length === 0 && (
+          <Text style={styles.emptyHint}>
+            No chats yet. Tap “New chat” above to start.
+          </Text>
+        )}
+        {grouped.map((group) => (
+          <View key={group.bucket}>
+            <View style={styles.sectionHeader}>
+              <Text style={styles.sectionHeaderTitle}>
+                {BUCKET_LABELS[group.bucket]}
+              </Text>
+              <View style={styles.sectionCountBadge}>
+                <Text style={styles.sectionCountBadgeText}>
+                  {group.chats.length}
+                </Text>
+              </View>
+            </View>
+            {group.chats.map((chat) => {
+              const isActive = String(chat.id) === activeId;
+              return (
+                <ChatRow
+                  key={chat.id}
+                  chat={chat}
+                  isActive={isActive}
+                  onPress={() => {
+                    tap();
+                    // Close the drawer on selection — leaving it open after
+                    // navigation feels broken. Use replace (not push) so the
+                    // back stack doesn't accumulate every chat the user has
+                    // ever opened in this session.
+                    props?.navigation?.closeDrawer?.();
+                    router.replace(`/(auth)/(drawer)/(chat)/${chat.id}`);
                   }}
+                  onDelete={() => onDeleteChat(chat.id, chat.title)}
+                  onOpenMenu={(anchor) => setMenuState({ anchor, chat })}
                 />
-              </ContextMenu.Item>
-              <ContextMenu.Item key={'delete'} onSelect={() => onDeleteChat(chat.id)} destructive>
-                <ContextMenu.ItemTitle>Delete</ContextMenu.ItemTitle>
-                <ContextMenu.ItemIcon
-                  ios={{
-                    name: 'trash',
-                    pointSize: 18,
-                  }}
-                />
-              </ContextMenu.Item>
-            </ContextMenu.Content>
-          </ContextMenu.Root>
+              );
+            })}
+          </View>
         ))}
       </DrawerContentScrollView>
 
-      <View
-        style={{
-          padding: 16,
-          paddingBottom: 10 + bottom,
-          backgroundColor: Colors.light,
-        }}>
+      <View style={[styles.footerWrap, { paddingBottom: Math.max(bottom, 10) }]}>
         <Link href="/(auth)/(modal)/settings" asChild>
           <TouchableOpacity style={styles.footer}>
-            <Image
-              source={{ uri: 'https://galaxies.dev/img/meerkat_2.jpg' }}
-              style={styles.avatar}
-            />
-            <Text style={styles.userName}>Mika Meerkat</Text>
-            <Ionicons name="ellipsis-horizontal" size={24} color={Colors.greyLight} />
+            {user?.imageUrl ? (
+              <Image source={{ uri: user.imageUrl }} style={styles.avatar} />
+            ) : (
+              <View style={[styles.avatar, styles.avatarFallback]}>
+                <Text style={styles.avatarLetter}>
+                  {displayName.charAt(0).toUpperCase()}
+                </Text>
+              </View>
+            )}
+            <View style={styles.userBlock}>
+              <Text style={styles.userName} numberOfLines={1}>
+                {displayName}
+              </Text>
+              <View style={styles.planRow}>
+                <View
+                  style={[
+                    styles.planBadge,
+                    isPro ? styles.planBadgePro : styles.planBadgeFree,
+                  ]}>
+                  <Text
+                    style={[
+                      styles.planBadgeText,
+                      isPro && { color: '#fff' },
+                    ]}>
+                    {isPro ? 'PRO' : 'FREE'}
+                  </Text>
+                </View>
+                <Text style={styles.planHint}>· Settings</Text>
+              </View>
+            </View>
+            <Ionicons name="chevron-forward" size={18} color={Colors.slateSoft} />
           </TouchableOpacity>
         </Link>
       </View>
+
+      <PopoverMenu
+        visible={!!menuState}
+        anchor={menuState?.anchor ?? null}
+        onClose={() => setMenuState(null)}
+        items={
+          menuState
+            ? [
+                {
+                  key: 'rename',
+                  label: 'Rename',
+                  icon: 'pencil-outline',
+                  onPress: () => onRenameChat(menuState.chat.id, menuState.chat.title),
+                },
+                {
+                  key: 'delete',
+                  label: 'Delete',
+                  icon: 'trash-outline',
+                  destructive: true,
+                  onPress: () => onDeleteChat(menuState.chat.id, menuState.chat.title),
+                },
+              ]
+            : []
+        }
+      />
+
+      <Modal
+        visible={!!renameTarget}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setRenameTarget(null)}>
+        <KeyboardAvoidingView
+          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+          style={styles.renameBackdrop}>
+          <Pressable
+            style={StyleSheet.absoluteFill}
+            onPress={() => setRenameTarget(null)}
+            accessibilityLabel="Dismiss rename dialog"
+          />
+          <View style={styles.renameCard}>
+            <Text style={styles.renameTitle}>Rename chat</Text>
+            <TextInput
+              value={renameDraft}
+              onChangeText={setRenameDraft}
+              autoFocus
+              selectTextOnFocus
+              maxLength={100}
+              placeholder="Chat title"
+              placeholderTextColor={Colors.slateSoft}
+              style={styles.renameInput}
+              returnKeyType="done"
+              onSubmitEditing={onRenameConfirm}
+            />
+            <View style={styles.renameRow}>
+              <TouchableOpacity
+                onPress={() => setRenameTarget(null)}
+                style={styles.renameBtnGhost}
+                accessibilityLabel="Cancel rename">
+                <Text style={styles.renameBtnGhostText}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                onPress={onRenameConfirm}
+                style={styles.renameBtnPrimary}
+                accessibilityLabel="Save new chat name">
+                <Text style={styles.renameBtnPrimaryText}>Save</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </KeyboardAvoidingView>
+      </Modal>
     </View>
   );
 };
 
 const Layout = () => {
-  const navigation = useNavigation();
   const dimensions = useWindowDimensions();
-  const { user } = useRevenueCat();
-  const router = useRouter();
 
   return (
     <Drawer
       drawerContent={CustomDrawerContent}
-      screenOptions={{
+      screenOptions={({ navigation }) => ({
         headerLeft: () => (
           <TouchableOpacity
-            onPress={() => navigation.dispatch(DrawerActions.toggleDrawer)}
-            style={{ marginLeft: 16 }}>
-            <FontAwesome6 name="grip-lines" size={20} color={Colors.grey} />
+            onPress={() => {
+              tap();
+              navigation.dispatch(DrawerActions.toggleDrawer());
+            }}
+            accessibilityLabel="Open chats"
+            hitSlop={12}
+            style={styles.hamburgerBtn}>
+            <Ionicons name="menu" size={20} color={Colors.ink} />
           </TouchableOpacity>
         ),
-        headerStyle: {
-          backgroundColor: Colors.light,
-        },
+        headerStyle: { backgroundColor: Colors.cream },
         headerShadowVisible: false,
-        drawerActiveBackgroundColor: Colors.selected,
-        drawerActiveTintColor: '#000',
-        drawerInactiveTintColor: '#000',
-        overlayColor: 'rgba(0, 0, 0, 0.2)',
-        drawerItemStyle: { borderRadius: 12 },
-        drawerLabelStyle: { marginLeft: -20 },
-        drawerStyle: { width: dimensions.width * 0.86 },
-      }}>
+        headerTitleStyle: {
+          fontFamily: 'SourceSerif4_400Regular',
+          color: Colors.ink,
+          fontSize: 20,
+        },
+        drawerActiveBackgroundColor: Colors.creamSoft,
+        drawerActiveTintColor: Colors.ink,
+        drawerInactiveTintColor: Colors.graphite,
+        overlayColor: Colors.inkScrim40,
+        // The drawer body is fully custom (CustomDrawerContent renders its own
+        // New Chat row + chat list), so hide the default DrawerItemList items.
+        drawerItemStyle: { display: 'none', height: 0 },
+        drawerStyle: { width: dimensions.width * 0.82, backgroundColor: Colors.cream },
+      })}>
       <Drawer.Screen
         name="(chat)/new"
-        getId={() => Math.random().toString()}
         options={{
-          title: 'ChatGPT',
-          drawerIcon: () => (
-            <View style={[styles.item, { backgroundColor: '#000' }]}>
-              <Image source={require('@/assets/images/logo-white.png')} style={styles.btnImage} />
-            </View>
-          ),
+          title: 'Archius',
           headerRight: () => (
-            <Link href={'/(auth)/(drawer)/(chat)/new'} push asChild>
-              <TouchableOpacity>
+            <Link href={'/(auth)/(drawer)/(chat)/new'} replace asChild>
+              <TouchableOpacity
+                accessibilityLabel="Start a new chat"
+                accessibilityRole="button"
+                hitSlop={8}>
                 <Ionicons
                   name="create-outline"
-                  size={24}
-                  color={Colors.grey}
+                  size={22}
+                  color={Colors.ink}
                   style={{ marginRight: 16 }}
                 />
               </TouchableOpacity>
@@ -205,62 +517,21 @@ const Layout = () => {
       <Drawer.Screen
         name="(chat)/[id]"
         options={{
-          drawerItemStyle: {
-            display: 'none',
-          },
+          drawerItemStyle: { display: 'none' },
           headerRight: () => (
-            <Link href={'/(auth)/(drawer)/(chat)/new'} push asChild>
-              <TouchableOpacity>
+            <Link href={'/(auth)/(drawer)/(chat)/new'} replace asChild>
+              <TouchableOpacity
+                accessibilityLabel="Start a new chat"
+                accessibilityRole="button"
+                hitSlop={8}>
                 <Ionicons
                   name="create-outline"
-                  size={24}
-                  color={Colors.grey}
+                  size={22}
+                  color={Colors.ink}
                   style={{ marginRight: 16 }}
                 />
               </TouchableOpacity>
             </Link>
-          ),
-        }}
-      />
-      <Drawer.Screen
-        name="dalle"
-        options={{
-          title: 'Dall·E',
-          drawerIcon: () => (
-            <View style={[styles.item, { backgroundColor: '#000' }]}>
-              <Image source={require('@/assets/images/dalle.png')} style={styles.dallEImage} />
-            </View>
-          ),
-        }}
-        listeners={{
-          drawerItemPress: (e) => {
-            e.preventDefault();
-            if (!user.dalle) {
-              router.navigate('/(auth)/(modal)/purchase');
-            } else {
-              router.navigate('/(auth)/dalle');
-            }
-          },
-        }}
-      />
-      <Drawer.Screen
-        name="explore"
-        options={{
-          title: 'Explore GPTs',
-          drawerIcon: () => (
-            <View
-              style={[
-                styles.item,
-                {
-                  backgroundColor: '#fff',
-                  width: 28,
-                  height: 28,
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                },
-              ]}>
-              <Ionicons name="apps-outline" size={18} color="#000" />
-            </View>
           ),
         }}
       />
@@ -272,56 +543,240 @@ const styles = StyleSheet.create({
   searchSection: {
     marginHorizontal: 16,
     borderRadius: 10,
-    height: 34,
+    height: 36,
     flexDirection: 'row',
-    justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: Colors.input,
+    backgroundColor: Colors.creamSoft,
+    borderWidth: 1,
+    borderColor: Colors.stone,
   },
-  searchIcon: {
-    padding: 6,
-  },
+  searchIcon: { padding: 8 },
   input: {
     flex: 1,
-    paddingTop: 8,
+    paddingVertical: 8,
     paddingRight: 8,
-    paddingBottom: 8,
-    paddingLeft: 0,
-    alignItems: 'center',
-    color: '#424242',
+    fontFamily: 'Inter_400Regular',
+    fontSize: 14,
+    color: Colors.graphite,
   },
-  footer: {
+  newChatRow: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 12,
+    marginHorizontal: 8,
+    marginTop: 4,
+    marginBottom: 4,
+    paddingLeft: 12,
+    paddingRight: 14,
+    minHeight: 48,
+    borderRadius: 12,
   },
-  roundImage: {
+  newChatRowPressed: {
+    backgroundColor: Colors.creamSoft,
+  },
+  newChatIcon: {
     width: 30,
     height: 30,
+    borderRadius: 8,
+    backgroundColor: Colors.ink,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
-  avatar: {
-    width: 40,
-    height: 40,
+  newChatLabel: {
+    flex: 1,
+    fontFamily: 'Inter_600SemiBold',
+    fontSize: 15,
+    color: Colors.ink,
+  },
+  hamburgerBtn: {
+    marginLeft: 12,
+    width: 36,
+    height: 36,
+    borderRadius: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: Colors.creamSoft,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: Colors.stone,
+  },
+  chatRowOuter: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingLeft: 16,
+    paddingRight: 6,
+    minHeight: 44,
+    marginHorizontal: 8,
+    marginVertical: 1,
+    borderRadius: 12,
+    gap: 8,
+  },
+  chatRowPressed: {
+    backgroundColor: Colors.creamSoft,
+  },
+  chatRowActive: {
+    backgroundColor: Colors.blueprintTint10,
+  },
+  chatRowTitle: {
+    flex: 1,
+    fontFamily: 'Inter_400Regular',
+    fontSize: 15,
+    color: Colors.slate,
+  },
+  chatRowMore: {
+    width: 32,
+    height: 32,
+    borderRadius: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  swipeDeleteAction: {
+    backgroundColor: Colors.rust,
+    justifyContent: 'center',
+    alignItems: 'center',
+    width: 88,
+    marginVertical: 1,
+    marginRight: 8,
+    borderRadius: 12,
+  },
+  swipeDeleteText: {
+    fontFamily: 'Inter_600SemiBold',
+    color: '#fff',
+    fontSize: 12,
+    marginTop: 4,
+  },
+  sectionHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 20,
+    paddingTop: 18,
+    paddingBottom: 6,
+    gap: 4,
+  },
+  sectionHeaderTitle: {
+    fontFamily: 'Inter_700Bold',
+    fontSize: 13,
+    color: Colors.slate,
+    letterSpacing: 0.1,
+    marginLeft: 2,
+  },
+  sectionCountBadge: {
+    backgroundColor: Colors.blueprintTint12,
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 999,
+    marginLeft: 6,
+  },
+  sectionCountBadgeText: {
+    fontFamily: 'Inter_600SemiBold',
+    fontSize: 11,
+    color: Colors.blueprint,
+  },
+  emptyHint: {
+    fontFamily: 'Inter_400Regular',
+    color: Colors.slateSoft,
+    fontSize: 13,
+    marginHorizontal: 20,
+    marginVertical: 12,
+  },
+  footerWrap: {
+    padding: 16,
+    backgroundColor: Colors.cream,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: Colors.stone,
+  },
+  footer: { flexDirection: 'row', alignItems: 'center', gap: 12 },
+  avatar: { width: 40, height: 40, borderRadius: 12 },
+  avatarFallback: {
+    backgroundColor: Colors.ink,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  avatarLetter: { fontFamily: 'Inter_600SemiBold', color: '#fff', fontSize: 17 },
+  userBlock: { flex: 1, marginRight: 4 },
+  userName: {
+    fontFamily: 'Inter_600SemiBold',
+    fontSize: 14,
+    color: Colors.graphite,
+  },
+  planRow: { flexDirection: 'row', alignItems: 'center', marginTop: 3, gap: 4 },
+  planBadge: {
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 6,
+  },
+  planBadgeFree: { backgroundColor: Colors.stone },
+  planBadgePro: { backgroundColor: Colors.blueprint },
+  planBadgeText: {
+    fontFamily: 'Inter_700Bold',
+    fontSize: 11,
+    letterSpacing: 0.5,
+    color: Colors.slate,
+  },
+  planHint: { fontFamily: 'Inter_400Regular', fontSize: 11, color: Colors.slateSoft },
+  renameBackdrop: {
+    flex: 1,
+    backgroundColor: Colors.inkScrim40,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: 24,
+  },
+  renameCard: {
+    width: '100%',
+    maxWidth: 360,
+    backgroundColor: Colors.cream,
+    borderRadius: 16,
+    padding: 20,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: Colors.stone,
+    shadowColor: Colors.ink,
+    shadowOffset: { width: 0, height: 12 },
+    shadowOpacity: 0.2,
+    shadowRadius: 32,
+    elevation: 10,
+  },
+  renameTitle: {
+    fontFamily: 'Inter_600SemiBold',
+    fontSize: 16,
+    color: Colors.ink,
+    marginBottom: 12,
+  },
+  renameInput: {
+    height: 44,
+    borderWidth: 1,
+    borderColor: Colors.stone,
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    fontFamily: 'Inter_400Regular',
+    fontSize: 15,
+    color: Colors.graphite,
+    backgroundColor: '#fff',
+    marginBottom: 16,
+  },
+  renameRow: {
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
+    gap: 8,
+  },
+  renameBtnGhost: {
+    paddingHorizontal: 14,
+    paddingVertical: 10,
     borderRadius: 10,
   },
-  userName: {
-    fontSize: 16,
-    fontWeight: '600',
-    flex: 1,
+  renameBtnGhostText: {
+    fontFamily: 'Inter_500Medium',
+    fontSize: 14,
+    color: Colors.slate,
   },
-  item: {
-    borderRadius: 15,
-    overflow: 'hidden',
+  renameBtnPrimary: {
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderRadius: 10,
+    backgroundColor: Colors.ink,
   },
-  btnImage: {
-    margin: 6,
-    width: 16,
-    height: 16,
-  },
-  dallEImage: {
-    width: 28,
-    height: 28,
-    resizeMode: 'cover',
+  renameBtnPrimaryText: {
+    fontFamily: 'Inter_600SemiBold',
+    fontSize: 14,
+    color: '#fff',
   },
 });
 

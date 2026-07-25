@@ -1,228 +1,117 @@
+import BrandMark from '@/components/BrandMark';
 import Colors from '@/constants/Colors';
-import { memo } from 'react';
-import { StyleSheet, useWindowDimensions } from 'react-native';
+import { useEffect } from 'react';
+import { StyleSheet, Text, View } from 'react-native';
 import Animated, {
-  interpolate,
-  interpolateColor,
-  useAnimatedReaction,
+  Easing,
   useAnimatedStyle,
-  useDerivedValue,
   useSharedValue,
   withDelay,
+  withRepeat,
+  withSequence,
   withTiming,
 } from 'react-native-reanimated';
-import { ReText } from 'react-native-redash';
-
-const content = [
-  {
-    title: "Let's create.",
-    bg: Colors.lime,
-    fontColor: Colors.pink,
-  },
-  {
-    title: "Let's brainstorm.",
-    bg: Colors.brown,
-    fontColor: Colors.sky,
-  },
-  {
-    title: "Let's discover.",
-    bg: Colors.orange,
-    fontColor: Colors.blue,
-  },
-  {
-    title: "Let's go.",
-    bg: Colors.teal,
-    fontColor: Colors.yellow,
-  },
-  {
-    title: 'ChatGPT.',
-    bg: Colors.green,
-    fontColor: Colors.pink,
-  },
-];
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 const AnimatedIntro = () => {
-  const { width } = useWindowDimensions();
-  const ballWidth = 34;
-  const half = width / 2 - ballWidth / 2;
+  const { top } = useSafeAreaInsets();
+  // Entrance opacities + translations
+  const markOpacity = useSharedValue(0);
+  const markScale = useSharedValue(0.92);
+  const wordmarkOpacity = useSharedValue(0);
+  const wordmarkY = useSharedValue(12);
+  const taglineOpacity = useSharedValue(0);
+  // Idle breathing (very subtle, infinite)
+  const breath = useSharedValue(0);
 
-  const currentX = useSharedValue(half);
-  const currentIndex = useSharedValue(0);
-  const isAtStart = useSharedValue(true);
-  const labelWidth = useSharedValue(0);
-  const canGoToNext = useSharedValue(false);
-  const didPlay = useSharedValue(false);
+  useEffect(() => {
+    const ease = Easing.out(Easing.cubic);
 
-  const newColorIndex = useDerivedValue(() => {
-    if (!isAtStart.value) {
-      return (currentIndex.value + 1) % content.length;
-    }
-    return currentIndex.value;
-  }, [currentIndex]);
+    markOpacity.value = withTiming(1, { duration: 480, easing: ease });
+    markScale.value = withTiming(1, { duration: 480, easing: ease });
 
-  const textStyle = useAnimatedStyle(() => {
-    return {
-      color: interpolateColor(
-        currentX.value,
-        [half, half + labelWidth.value / 2],
-        [content[newColorIndex.value].fontColor, content[currentIndex.value].fontColor],
-        'RGB'
-      ),
-      transform: [
-        {
-          translateX: interpolate(
-            currentX.value,
-            [half, half + labelWidth.value / 2],
-            [half + 4, half - labelWidth.value / 2]
-          ),
-        },
-      ],
-    };
-  }, [currentIndex, currentX]);
+    wordmarkOpacity.value = withDelay(180, withTiming(1, { duration: 420, easing: ease }));
+    wordmarkY.value = withDelay(180, withTiming(0, { duration: 420, easing: ease }));
 
-  const ballStyle = useAnimatedStyle(() => {
-    return {
-      backgroundColor: interpolateColor(
-        currentX.value,
-        [half, half + labelWidth.value / 2],
-        [content[newColorIndex.value].fontColor, content[currentIndex.value].fontColor],
-        'RGB'
-      ),
-      transform: [{ translateX: currentX.value }],
-    };
-  });
+    taglineOpacity.value = withDelay(360, withTiming(1, { duration: 480, easing: ease }));
 
-  const mask = useAnimatedStyle(
-    () => ({
-      backgroundColor: interpolateColor(
-        currentX.value,
-        [half, half + labelWidth.value / 2],
-        [content[newColorIndex.value].bg, content[currentIndex.value].bg],
-        'RGB'
-      ),
-      transform: [{ translateX: currentX.value }],
-      width: width / 1.5,
-      borderTopLeftRadius: 20,
-      borderBottomLeftRadius: 20,
-    }),
-    [currentIndex, currentX, labelWidth]
-  );
+    // Soft breathing — starts after the entrance has settled.
+    breath.value = withDelay(
+      1000,
+      withRepeat(
+        withSequence(
+          withTiming(1, { duration: 2400, easing: Easing.inOut(Easing.sin) }),
+          withTiming(0, { duration: 2400, easing: Easing.inOut(Easing.sin) })
+        ),
+        -1,
+        false
+      )
+    );
+  }, [markOpacity, markScale, wordmarkOpacity, wordmarkY, taglineOpacity, breath]);
 
-  const style1 = useAnimatedStyle(() => ({
-    backgroundColor: interpolateColor(
-      currentX.value,
-      [half, half + labelWidth.value / 2],
-      [content[newColorIndex.value].bg, content[currentIndex.value].bg],
-      'RGB'
-    ),
-    opacity: interpolate(1, [1, 0], [1, 0, 0, 0, 0, 0, 0]),
+  const markStyle = useAnimatedStyle(() => ({
+    opacity: markOpacity.value,
     transform: [
-      {
-        translateX: interpolate(1, [1, 0], [0, -width * 2, -width, -width, -width, -width, -width]),
-      },
+      { scale: markScale.value },
+      { translateY: breath.value * -2 },
     ],
   }));
 
-  const text = useDerivedValue(() => {
-    const index = currentIndex.value;
-    return content[index].title;
-  }, [currentIndex]);
+  const wordmarkStyle = useAnimatedStyle(() => ({
+    opacity: wordmarkOpacity.value,
+    transform: [{ translateY: wordmarkY.value }],
+  }));
 
-  useAnimatedReaction(
-    () => labelWidth.value,
-    (newWidth) => {
-      currentX.value = withDelay(
-        1000,
-        withTiming(
-          half + newWidth / 2,
-          {
-            duration: 800,
-          },
-          (finished) => {
-            if (finished) {
-              canGoToNext.value = true;
-              isAtStart.value = false;
-            }
-          }
-        )
-      );
-    },
-    [labelWidth, currentX, half]
-  );
-
-  useAnimatedReaction(
-    () => canGoToNext.value,
-    (next) => {
-      if (next) {
-        canGoToNext.value = false;
-        currentX.value = withDelay(
-          1000,
-          withTiming(
-            half,
-            {
-              duration: 800,
-            },
-            (finished) => {
-              if (finished) {
-                currentIndex.value = (currentIndex.value + 1) % content.length;
-                isAtStart.value = true;
-                didPlay.value = false;
-              }
-            }
-          )
-        );
-      }
-    },
-    [currentX, labelWidth]
-  );
+  const taglineStyle = useAnimatedStyle(() => ({
+    opacity: taglineOpacity.value,
+  }));
 
   return (
-    <Animated.View style={[styles.wrapper, style1]}>
-      <Animated.View style={[styles.content]}>
-        <Animated.View style={[styles.ball, ballStyle]} />
-        <Animated.View style={[styles.mask, mask]} />
-        <ReText
-          onLayout={(e) => {
-            labelWidth.value = e.nativeEvent.layout.width + 4;
-          }}
-          style={[styles.title, textStyle]}
-          text={text}
-        />
-      </Animated.View>
-    </Animated.View>
+    <View style={[styles.container, { paddingTop: top + 64 }]}>
+      <View style={styles.row}>
+        <Animated.View style={markStyle}>
+          <BrandMark size={48} color={Colors.ink} />
+        </Animated.View>
+        <Animated.Text style={[styles.wordmark, wordmarkStyle]}>Archius</Animated.Text>
+      </View>
+
+      <Animated.Text style={[styles.tagline, taglineStyle]}>
+        AI that <Text style={styles.taglineItalic}>actually</Text> works.
+      </Animated.Text>
+    </View>
   );
 };
 
 const styles = StyleSheet.create({
-  wrapper: {
+  container: {
     flex: 1,
+    alignItems: 'center',
+    paddingHorizontal: 32,
+    backgroundColor: Colors.cream,
   },
-  mask: {
-    zIndex: 1,
-    position: 'absolute',
-    left: '0%',
-    height: 44,
-  },
-  ball: {
-    width: 40,
-    zIndex: 10,
-    height: 40,
-    backgroundColor: '#000',
-    borderRadius: 20,
-    position: 'absolute',
-    left: '0%',
-  },
-  titleText: {
+  row: {
     flexDirection: 'row',
+    alignItems: 'center',
+    gap: 16,
+    marginBottom: 24,
   },
-  title: {
-    fontSize: 36,
-    fontWeight: '600',
-    left: '0%',
-    position: 'absolute',
+  wordmark: {
+    fontFamily: 'SourceSerif4_300Light',
+    fontSize: 52,
+    color: Colors.ink,
+    letterSpacing: -1.2,
   },
-  content: {
-    marginTop: 300,
+  tagline: {
+    fontFamily: 'Inter_400Regular',
+    fontSize: 18,
+    color: Colors.slate,
+    textAlign: 'center',
+  },
+  taglineItalic: {
+    fontFamily: 'SourceSerif4_300Light_Italic',
+    color: Colors.blueprint,
+    fontSize: 18,
   },
 });
-export default memo(AnimatedIntro);
+
+export default AnimatedIntro;

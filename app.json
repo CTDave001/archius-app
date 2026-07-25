@@ -1,33 +1,49 @@
 {
   "expo": {
-    "name": "Chatgpt",
-    "slug": "chatgpt",
-    "version": "1.0.0",
-    "orientation": "portrait",
-    "icon": "./assets/images/icon.png",
-    "scheme": "chatgpt",
-    "userInterfaceStyle": "automatic",
+    "name": "Archius",
+    "slug": "archius",
+    "scheme": "archius",
+    "version": "1.0.2",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "light",
     "splash": {
-      "image": "./assets/images/splash.png",
+      "image": "./assets/foreground.png",
       "resizeMode": "contain",
-      "backgroundColor": "#ffffff"
+      "backgroundColor": "#FAF8F3"
     },
-    "assetBundlePatterns": ["**/*"],
+    "assetBundlePatterns": [
+      "**/*"
+    ],
     "ios": {
-      "supportsTablet": true,
-      "bundleIdentifier": "com.supersimon.chatgpt"
+      "supportsTablet": false,
+      "bundleIdentifier": "app.archius",
+      "infoPlist": {
+        "ITSAppUsesNonExemptEncryption": false
+      },
+      "runtimeVersion": {
+        "policy": "appVersion"
+      }
     },
     "android": {
+      "package": "app.archius",
       "adaptiveIcon": {
-        "foregroundImage": "./assets/images/adaptive-icon.png",
-        "backgroundColor": "#ffffff"
+        "foregroundImage": "./assets/foreground.png",
+        "backgroundColor": "#FAF8F3",
+        "monochromeImage": "./assets/monochrome.png"
       },
-      "package": "com.supersimon.chatgpt"
+      "permissions": [
+        "android.permission.RECORD_AUDIO",
+        "android.permission.READ_CALENDAR",
+        "android.permission.WRITE_CALENDAR",
+        "android.permission.RECORD_AUDIO",
+        "android.permission.READ_CALENDAR",
+        "android.permission.WRITE_CALENDAR"
+      ]
     },
     "web": {
       "bundler": "metro",
-      "output": "static",
-      "favicon": "./assets/images/favicon.png"
+      "output": "server",
+      "favicon": "./assets/icon.png"
     },
     "plugins": [
       "expo-router",
@@ -35,29 +51,46 @@
       [
         "expo-build-properties",
         {
+          "ios": {
+            "deploymentTarget": "15.1"
+          },
           "android": {
             "minSdkVersion": 24,
-            "compileSdkVersion": 33,
-            "targetSdkVersion": 33,
-            "buildToolsVersion": "33.0.0",
-            "kotlinVersion": "1.6.20"
-          },
-          "ios": {
-            "deploymentTarget": "15.0"
+            "compileSdkVersion": 35,
+            "targetSdkVersion": 35
           }
         }
       ],
+      "expo-mail-composer",
       [
-        "expo-media-library",
+        "expo-image-picker",
         {
-          "photosPermission": "Allow $(PRODUCT_NAME) to access your photos.",
-          "savePhotosPermission": "Allow $(PRODUCT_NAME) to save photos.",
-          "isAccessMediaLocationEnabled": true
+          "photosPermission": "Archius needs access to your photos so you can attach images to ask about them."
         }
-      ]
+      ],
+      [
+        "expo-calendar",
+        {
+          "calendarPermission": "Archius needs calendar access to add events you ask it to create."
+        }
+      ],
+      "expo-sharing"
     ],
     "experiments": {
       "typedRoutes": true
+    },
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "6a35717d-5281-4b5d-b17d-e3a8536d95a8"
+      }
+    },
+    "owner": "dbogdanov",
+    "updates": {
+      "url": "https://u.expo.dev/6a35717d-5281-4b5d-b17d-e3a8536d95a8"
+    },
+    "runtimeVersion": {
+      "policy": "appVersion"
     }
   }
 }

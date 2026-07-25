@@ -1,111 +1,211 @@
-import { createContext, useContext, useEffect, useState } from 'react';
+import { useAuth, useUser } from '@clerk/clerk-expo';
+import { createContext, useContext, useEffect, useRef, useState } from 'react';
 import { Alert, Platform } from 'react-native';
-import Purchases, { LOG_LEVEL, PurchasesPackage } from 'react-native-purchases';
-import { CustomerInfo } from 'react-native-purchases';
+import Purchases, {
+  LOG_LEVEL,
+  PurchasesPackage,
+  CustomerInfo,
+} from 'react-native-purchases';
 
-// Use your RevenueCat API keys
 const APIKeys = {
   apple: process.env.EXPO_PUBLIC_RC_APPLE_KEY as string,
   google: process.env.EXPO_PUBLIC_RC_GOOGLE_KEY as string,
 };
 
-interface RevenueCatProps {
+export const PRO_ENTITLEMENT_ID = 'pro';
+
+// How long we wait for RevenueCat init before letting the rest of the app
+// render. Past this we assume something is wrong (no network, RC outage)
+// and fall through with isPro=false rather than hanging the app forever.
+const INIT_TIMEOUT_MS = 4_000;
+
+interface RevenueCatContextValue {
+  isPro: boolean;
+  packages: PurchasesPackage[];
   purchasePackage: (pack: PurchasesPackage) => Promise<void>;
   restorePermissions: () => Promise<CustomerInfo>;
-  user: UserState;
-  packages: PurchasesPackage[];
 }
 
-export interface UserState {
-  dalle: boolean;
-}
+const RevenueCatContext = createContext<RevenueCatContextValue | null>(null);
 
-const RevenueCatContext = createContext<Partial<RevenueCatProps>>({});
-
-// Export context for easy usage
-export const useRevenueCat = () => {
-  return useContext(RevenueCatContext) as RevenueCatProps;
+export const useRevenueCat = (): RevenueCatContextValue => {
+  const ctx = useContext(RevenueCatContext);
+  if (!ctx) {
+    throw new Error('useRevenueCat must be used within RevenueCatProvider');
+  }
+  return ctx;
 };
 
-// Provide RevenueCat functions to our app
-export const RevenueCatProvider = ({ children }: any) => {
-  const [user, setUser] = useState<UserState>({ dalle: false });
+const hasProEntitlement = (info: CustomerInfo) =>
+  info.entitlements.active[PRO_ENTITLEMENT_ID] !== undefined;
+
+const withTimeout = <T,>(p: Promise<T>, ms: number): Promise<T> =>
+  Promise.race([
+    p,
+    new Promise<T>((_, reject) =>
+      setTimeout(() => reject(new Error(`Timed out after ${ms}ms`)), ms)
+    ),
+  ]);
+
+export const RevenueCatProvider = ({ children }: { children: React.ReactNode }) => {
+  const [isPro, setIsPro] = useState(false);
   const [packages, setPackages] = useState<PurchasesPackage[]>([]);
   const [isReady, setIsReady] = useState(false);
+  const [isConfigured, setIsConfigured] = useState(false);
+  const { userId: clerkUserId } = useAuth();
+  const { user } = useUser();
+  const listenerRef = useRef<((info: CustomerInfo) => void) | null>(null);
 
+  // Initial init — happens once, regardless of auth state.
   useEffect(() => {
+    let cancelled = false;
     const init = async () => {
-      if (Platform.OS === 'android') {
-        await Purchases.configure({ apiKey: APIKeys.google });
-      } else {
-        await Purchases.configure({ apiKey: APIKeys.apple });
+      try {
+        const apiKey = Platform.OS === 'android' ? APIKeys.google : APIKeys.apple;
+        if (!apiKey || apiKey === 'goog_' || apiKey === 'appl_') {
+          // RC not configured — render children with isPro=false. The
+          // server-side Clerk publicMetadata still gates the actual model.
+          if (!cancelled) setIsReady(true);
+          return;
+        }
+
+        // Purchases.configure is synchronous (returns void), so no timeout
+        // applies. The network calls below are what we want to time-bound.
+        Purchases.configure({ apiKey });
+        if (cancelled) return;
+        setIsConfigured(true);
+        if (__DEV__) Purchases.setLogLevel(LOG_LEVEL.DEBUG);
+
+        const listener = (info: CustomerInfo) => {
+          if (!cancelled) setIsPro(hasProEntitlement(info));
+        };
+        listenerRef.current = listener;
+        Purchases.addCustomerInfoUpdateListener(listener);
+
+        // Fetch offerings + customer info in parallel; tolerate individual
+        // failures (no offerings shouldn't block isPro detection, and vice
+        // versa).
+        const [offeringsResult, customerInfoResult] = await Promise.allSettled([
+          withTimeout(Purchases.getOfferings(), INIT_TIMEOUT_MS),
+          withTimeout(Purchases.getCustomerInfo(), INIT_TIMEOUT_MS),
+        ]);
+        if (cancelled) return;
+        if (offeringsResult.status === 'fulfilled' && offeringsResult.value.current) {
+          setPackages(offeringsResult.value.current.availablePackages);
+        }
+        if (customerInfoResult.status === 'fulfilled') {
+          setIsPro(hasProEntitlement(customerInfoResult.value));
+        }
+      } catch (e) {
+        console.warn('RevenueCat init failed', e);
+      } finally {
+        if (!cancelled) setIsReady(true);
       }
-      setIsReady(true);
-
-      // Use more logging during debug if want!
-      Purchases.setLogLevel(LOG_LEVEL.DEBUG);
-
-      // Listen for customer updates
-      Purchases.addCustomerInfoUpdateListener(async (info) => {
-        updateCustomerInformation(info);
-      });
-
-      // Load all offerings and the user object with entitlements
-      await loadOfferings();
     };
     init();
+
+    return () => {
+      cancelled = true;
+      if (listenerRef.current) {
+        try {
+          Purchases.removeCustomerInfoUpdateListener(listenerRef.current);
+        } catch {
+          // ignore — RC may have torn down already
+        }
+        listenerRef.current = null;
+      }
+    };
   }, []);
 
-  // Load all offerings a user can (currently) purchase
-  const loadOfferings = async () => {
-    const offerings = await Purchases.getOfferings();
-    if (offerings.current) {
-      setPackages(offerings.current.availablePackages);
-    }
-  };
+  // Alias RC to the Clerk userId so server-side webhook events reach the
+  // right user. Skipped when RC isn't configured. Re-runs on auth change
+  // (sign-in / sign-out) so the alias always tracks the current Clerk user.
+  useEffect(() => {
+    if (!isConfigured) return;
+    let cancelled = false;
+    const syncAlias = async () => {
+      try {
+        if (clerkUserId) {
+          const result = await Purchases.logIn(clerkUserId);
+          if (!cancelled) setIsPro(hasProEntitlement(result.customerInfo));
+          // Tag user-level attributes for support / segmentation.
+          const email = user?.primaryEmailAddress?.emailAddress;
+          if (email) {
+            await Purchases.setAttributes({ $email: email, clerk_user_id: clerkUserId });
+          }
+        } else {
+          await Purchases.logOut();
+          if (!cancelled) setIsPro(false);
+        }
+      } catch (e) {
+        console.warn('RevenueCat alias sync failed', e);
+      }
+    };
+    syncAlias();
+    return () => {
+      cancelled = true;
+    };
+  }, [isConfigured, clerkUserId, user?.primaryEmailAddress?.emailAddress]);
 
-  // Update user state based on previous purchases
-  const updateCustomerInformation = async (customerInfo: CustomerInfo) => {
-    const newUser: UserState = { dalle: user.dalle };
-
-    if (customerInfo?.entitlements.active['DallE'] !== undefined) {
-      newUser.dalle = true;
-    }
-
-    setUser(newUser);
-  };
-
-  // Purchase a package
   const purchasePackage = async (pack: PurchasesPackage) => {
     try {
-      await Purchases.purchasePackage(pack);
-
-      if (pack.identifier === 'dalle') {
-        setUser({ dalle: true });
-        Alert.alert('Success', 'You have unlocked DallE!');
+      const result = await Purchases.purchasePackage(pack);
+      setIsPro(hasProEntitlement(result.customerInfo));
+      // Nudge Clerk to refresh JWT so the new publicMetadata.isPro
+      // (written by the RC webhook) reflects on the next chat request.
+      // The webhook may not have fired yet — that's OK; the in-process
+      // cache TTL is 60s so we'll catch up.
+      try {
+        await user?.reload();
+      } catch {
+        // ignore
       }
     } catch (e: any) {
       if (!e.userCancelled) {
-        alert(e);
+        Alert.alert('Purchase failed', e?.message ?? 'Try again later.');
       }
+      // Re-throw cancellations as errors that the caller can ignore, so
+      // the paywall doesn't auto-dismiss after a cancel.
+      throw e;
     }
   };
 
-  // // Restore previous purchases
   const restorePermissions = async () => {
-    const customer = await Purchases.restorePurchases();
-    return customer;
+    try {
+      const customer = await Purchases.restorePurchases();
+      setIsPro(hasProEntitlement(customer));
+      try {
+        await user?.reload();
+      } catch {
+        // ignore
+      }
+      Alert.alert(
+        hasProEntitlement(customer) ? 'Restored' : 'No active subscription',
+        hasProEntitlement(customer)
+          ? 'Your Archius Pro subscription has been restored.'
+          : "We didn't find an active subscription on this account."
+      );
+      return customer;
+    } catch (e: any) {
+      Alert.alert('Restore failed', e?.message ?? 'Try again later.');
+      throw e;
+    }
   };
 
-  const value = {
-    restorePermissions,
-    user,
-    packages,
-    purchasePackage,
-  };
+  if (!isReady) return null;
 
-  // Return empty fragment if provider is not ready (Purchase not yet initialised)
-  if (!isReady) return <></>;
+  // Unified Pro signal = RevenueCat entitlement OR Clerk publicMetadata.isPro.
+  // Clerk metadata is the server's source of truth (set by the RC webhook),
+  // so honoring it here keeps the whole app (drawer badge, settings, paywall,
+  // web-search gate) consistent with what the server enforces — even before
+  // RevenueCat is configured.
+  const clerkIsPro = (user?.publicMetadata as any)?.isPro === true;
+  const effectiveIsPro = isPro || clerkIsPro;
 
-  return <RevenueCatContext.Provider value={value}>{children}</RevenueCatContext.Provider>;
+  return (
+    <RevenueCatContext.Provider
+      value={{ isPro: effectiveIsPro, packages, purchasePackage, restorePermissions }}>
+      {children}
+    </RevenueCatContext.Provider>
+  );
 };

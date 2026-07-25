@@ -1,0 +1,15 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "buildCommand": "expo export -p web",
+  "outputDirectory": "dist/client",
+  "installCommand": "npm install --legacy-peer-deps",
+  "functions": {
+    "api/index.ts": {
+      "runtime": "@vercel/node@5.1.8",
+      "includeFiles": "dist/server/**"
+    }
+  },
+  "rewrites": [
+    { "source": "/api/(.*)", "destination": "/api/index" }
+  ]
+}

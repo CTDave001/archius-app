@@ -1,6 +1,8 @@
 import AnimatedIntro from '@/components/AnimatedIntro';
 import BottomLoginSheet from '@/components/BottomLoginSheet';
+import Colors from '@/constants/Colors';
 import { View, StyleSheet } from 'react-native';
+
 const Page = () => {
   return (
     <View style={styles.container}>
@@ -13,6 +15,8 @@ const Page = () => {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
+    backgroundColor: Colors.cream,
   },
 });
+
 export default Page;
