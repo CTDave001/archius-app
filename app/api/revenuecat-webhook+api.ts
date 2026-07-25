@@ -15,34 +15,18 @@
 
 import { createClerkClient } from '@clerk/backend';
 import { env } from '@/utils/env';
-import { invalidateProCache } from '@/utils/serverAuth';
+import { getRevenueCatProStatus, invalidateProCache } from '@/utils/serverAuth';
 
 const PRO_ENTITLEMENT_ID = 'pro';
-
-// Events that grant Pro
-const ACTIVATING_EVENTS = new Set([
-  'INITIAL_PURCHASE',
-  'RENEWAL',
-  'UNCANCELLATION',
-  'PRODUCT_CHANGE',
-  'TRANSFER',
-  'NON_RENEWING_PURCHASE',
-]);
-
-// Events that revoke Pro
-const REVOKING_EVENTS = new Set([
-  'EXPIRATION',
-  'CANCELLATION', // user cancelled but may still have time left — RC sends EXPIRATION at the actual end
-  'BILLING_ISSUE',
-  'SUBSCRIPTION_PAUSED',
-]);
+const MAX_WEBHOOK_REQUEST_BYTES = 256 * 1024;
 
 export async function POST(req: Request) {
   const secretKey = env('CLERK_SECRET_KEY');
   const webhookAuth = env('REVENUECAT_WEBHOOK_AUTH');
+  const revenueCatSecret = env('REVENUECAT_SECRET_KEY');
 
-  if (!secretKey || !webhookAuth) {
-    console.warn('[rc-webhook] missing CLERK_SECRET_KEY or REVENUECAT_WEBHOOK_AUTH');
+  if (!secretKey || !webhookAuth || !revenueCatSecret) {
+    console.warn('[rc-webhook] missing required server configuration');
     return new Response(JSON.stringify({ error: 'Server misconfigured' }), {
       status: 500,
       headers: { 'content-type': 'application/json' },
@@ -61,9 +45,33 @@ export async function POST(req: Request) {
     });
   }
 
+  const declaredLength = Number(req.headers.get('content-length') ?? '0');
+  if (Number.isFinite(declaredLength) && declaredLength > MAX_WEBHOOK_REQUEST_BYTES) {
+    return new Response(JSON.stringify({ error: 'Request body is too large' }), {
+      status: 413,
+      headers: { 'content-type': 'application/json' },
+    });
+  }
+
+  let rawBody: string;
+  try {
+    rawBody = await req.text();
+  } catch {
+    return new Response(JSON.stringify({ error: 'Invalid JSON' }), {
+      status: 400,
+      headers: { 'content-type': 'application/json' },
+    });
+  }
+  if (new TextEncoder().encode(rawBody).byteLength > MAX_WEBHOOK_REQUEST_BYTES) {
+    return new Response(JSON.stringify({ error: 'Request body is too large' }), {
+      status: 413,
+      headers: { 'content-type': 'application/json' },
+    });
+  }
+
   let body: any;
   try {
-    body = await req.json();
+    body = JSON.parse(rawBody);
   } catch {
     return new Response(JSON.stringify({ error: 'Invalid JSON' }), {
       status: 400,
@@ -73,10 +81,11 @@ export async function POST(req: Request) {
 
   const event = body?.event ?? body;
   const type: string | undefined = event?.type;
-  const userId: string | undefined = event?.app_user_id;
-  const entitlementIds: string[] = event?.entitlement_ids ?? [];
+  const entitlementIds: string[] = Array.isArray(event?.entitlement_ids)
+    ? event.entitlement_ids
+    : [];
 
-  if (!type || !userId) {
+  if (!type) {
     return new Response(JSON.stringify({ error: 'Malformed event' }), {
       status: 400,
       headers: { 'content-type': 'application/json' },
@@ -94,32 +103,66 @@ export async function POST(req: Request) {
     });
   }
 
-  let nextIsPro: boolean | null = null;
-  if (ACTIVATING_EVENTS.has(type)) nextIsPro = true;
-  else if (REVOKING_EVENTS.has(type)) nextIsPro = false;
-  // Other event types (TEST, etc.) — ack and skip
-  if (nextIsPro === null) {
+  // TEST is only a connectivity probe and has no subscriber state to sync.
+  // Every real event is reconciled against RevenueCat below instead of
+  // guessing from the event name. For example, CANCELLATION normally means
+  // "will not renew", not "access ended now".
+  if (type === 'TEST') {
     return new Response(JSON.stringify({ ok: true, skipped: 'noop_event_type' }), {
       status: 200,
       headers: { 'content-type': 'application/json' },
     });
   }
 
-  // Anonymous RC IDs start with "$RCAnonymousID:" — those can't be linked to
-  // a Clerk user. Skip and let the next event (post-login) catch it.
-  if (userId.startsWith('$RCAnonymousID:')) {
-    return new Response(JSON.stringify({ ok: true, skipped: 'anonymous_user' }), {
+  // TRANSFER events can omit app_user_id and instead identify both sides in
+  // transferred_from/transferred_to. Reconcile every linked Clerk identity:
+  // the source may need revocation while the destination gains access.
+  const candidateIds = [
+    event?.app_user_id,
+    ...(Array.isArray(event?.transferred_from) ? event.transferred_from : []),
+    ...(Array.isArray(event?.transferred_to) ? event.transferred_to : []),
+  ];
+  const userIds = Array.from(
+    new Set(
+      candidateIds.filter(
+        (candidate): candidate is string =>
+          typeof candidate === 'string' && candidate.startsWith('user_')
+      )
+    )
+  );
+
+  if (userIds.length === 0) {
+    return new Response(JSON.stringify({ ok: true, skipped: 'unlinked_user' }), {
       status: 200,
       headers: { 'content-type': 'application/json' },
     });
   }
 
+  const entitlementResults = await Promise.all(
+    userIds.map(async (userId) => ({
+      userId,
+      isPro: await getRevenueCatProStatus(userId),
+    }))
+  );
+  if (entitlementResults.some((result) => result.isPro === null)) {
+    // A non-2xx asks RevenueCat to retry. Acknowledging while its subscriber
+    // API is unavailable would silently lose the reconciliation opportunity.
+    return new Response(JSON.stringify({ error: 'Entitlement lookup unavailable' }), {
+      status: 503,
+      headers: { 'content-type': 'application/json', 'retry-after': '30' },
+    });
+  }
+
   try {
     const clerk = createClerkClient({ secretKey });
-    await clerk.users.updateUserMetadata(userId, {
-      publicMetadata: { isPro: nextIsPro },
-    });
-    invalidateProCache(userId);
+    await Promise.all(
+      entitlementResults.map(async ({ userId, isPro }) => {
+        await clerk.users.updateUserMetadata(userId, {
+          publicMetadata: { isPro: isPro as boolean },
+        });
+        invalidateProCache(userId);
+      })
+    );
   } catch (e: any) {
     console.warn('[rc-webhook] failed to update Clerk metadata:', e?.message ?? e);
     return new Response(JSON.stringify({ error: 'Failed to sync entitlement' }), {
@@ -128,7 +171,7 @@ export async function POST(req: Request) {
     });
   }
 
-  return new Response(JSON.stringify({ ok: true, isPro: nextIsPro }), {
+  return new Response(JSON.stringify({ ok: true, syncedUsers: userIds.length }), {
     status: 200,
     headers: { 'content-type': 'application/json' },
   });

@@ -194,11 +194,10 @@ export const RevenueCatProvider = ({ children }: { children: React.ReactNode }) 
 
   if (!isReady) return null;
 
-  // Unified Pro signal = RevenueCat entitlement OR Clerk publicMetadata.isPro.
-  // Clerk metadata is the server's source of truth (set by the RC webhook),
-  // so honoring it here keeps the whole app (drawer badge, settings, paywall,
-  // web-search gate) consistent with what the server enforces — even before
-  // RevenueCat is configured.
+  // Unified client display signal = RevenueCat entitlement OR webhook-cached
+  // Clerk metadata. The API still reconciles against RevenueCat and is the
+  // final authority for access; this fallback keeps the UI usable through a
+  // transient RevenueCat client initialization failure.
   const clerkIsPro = (user?.publicMetadata as any)?.isPro === true;
   const effectiveIsPro = isPro || clerkIsPro;
 

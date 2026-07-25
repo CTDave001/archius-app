@@ -23,6 +23,8 @@ import {
 } from '@/utils/ai';
 
 const ONE_DAY_MS = 24 * 60 * 60 * 1000;
+const REVIEW_SIGN_IN_WINDOW_MS = 15 * 60 * 1000;
+const REVIEW_SIGN_IN_LIMIT = 5;
 
 type Bucket = 'flash' | 'reasoner' | 'title' | 'search' | 'image';
 type UsageMap = Map<string, number[]>;
@@ -35,6 +37,7 @@ const usage: Record<Bucket, UsageMap> = {
   search: new Map(),
   image: new Map(),
 };
+const reviewSignInAttempts = new Map<string, number[]>();
 
 // Title generation has its own light cap to prevent abuse (a user creating
 // hundreds of empty chats just to spam the title endpoint). Title gen is
@@ -60,6 +63,36 @@ const limitFor = (bucket: Bucket, isPro: boolean): number => {
 export type RateLimitResult =
   | { ok: true; used: number; limit: number; bucket: Bucket }
   | { ok: false; used: number; limit: number; bucket: Bucket; retryAfterSeconds: number };
+
+export type AttemptLimitResult =
+  | { ok: true }
+  | { ok: false; retryAfterSeconds: number };
+
+/**
+ * Brute-force protection for the one-account App Review bridge. This remains
+ * a best-effort, per-instance guard until the app uses a shared server-side
+ * rate-limit store.
+ */
+export function recordReviewSignInAttempt(clientKey: string): AttemptLimitResult {
+  const now = Date.now();
+  const cutoff = now - REVIEW_SIGN_IN_WINDOW_MS;
+  const recent = (reviewSignInAttempts.get(clientKey) ?? []).filter((time) => time > cutoff);
+
+  if (recent.length >= REVIEW_SIGN_IN_LIMIT) {
+    reviewSignInAttempts.set(clientKey, recent);
+    return {
+      ok: false,
+      retryAfterSeconds: Math.max(
+        1,
+        Math.ceil((recent[0] + REVIEW_SIGN_IN_WINDOW_MS - now) / 1000)
+      ),
+    };
+  }
+
+  recent.push(now);
+  reviewSignInAttempts.set(clientKey, recent);
+  return { ok: true };
+}
 
 /**
  * Records a new usage timestamp if under the limit, otherwise refuses and

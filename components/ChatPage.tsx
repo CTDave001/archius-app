@@ -21,7 +21,7 @@ import { useChat } from '@ai-sdk/react';
 import { DefaultChatTransport, type UIMessage } from 'ai';
 import { useHeaderHeight } from '@react-navigation/elements';
 import { FlashList, type FlashListRef } from '@shopify/flash-list';
-import Constants from 'expo-constants';
+import { resolveApiBaseUrl } from '@/utils/apiUrl';
 import { lightImpact, success, tap } from '@/utils/haptics';
 import { maybeRequestReview } from '@/utils/reviewPrompt';
 import { fetch as expoFetch } from 'expo/fetch';
@@ -48,18 +48,7 @@ import Animated, {
 } from 'react-native-reanimated';
 import { Ionicons } from '@expo/vector-icons';
 
-const resolveApiBaseUrl = () => {
-  if (process.env.EXPO_PUBLIC_API_URL) return process.env.EXPO_PUBLIC_API_URL;
-  const hostUri =
-    Constants.expoConfig?.hostUri ||
-    (Constants.manifest2 as any)?.extra?.expoGo?.debuggerHost;
-  if (!hostUri) return 'http://localhost:8081';
-  if (hostUri.includes('exp.direct') || hostUri.includes('exp.host')) {
-    const hostOnly = hostUri.split(':')[0];
-    return `https://${hostOnly}`;
-  }
-  return `http://${hostUri}`;
-};
+const MAX_IMAGE_BASE64_CHARS = 3_500_000;
 
 type RenderedMessage = Message & {
   id: string;
@@ -316,9 +305,11 @@ const ChatPage = () => {
 
   // Active chat id — the chat we're persisting messages into. Mirrors the
   // route `id` for existing chats, and is set in onSend after addChat for
-  // brand-new chats (the route stays at /new until navigation, but messages
-  // need to land in the new chat row).
+  // brand-new chats before the route is promoted from /new to /<id>.
   const chatIdRef = useRef<string | undefined>(id);
+  // Lets the id-change effect distinguish promotion of the current in-memory
+  // /new conversation from navigation to a different saved conversation.
+  const promotingChatIdRef = useRef<string | null>(null);
   const lastPersistedAssistantRef = useRef<string>('');
   // Tracks the previous scroll position so we can dismiss the keyboard only
   // when the user scrolls UP (toward older history), not when scrolling down
@@ -502,6 +493,25 @@ const ChatPage = () => {
   useEffect(() => {
     let cancelled = false;
 
+    if (id && promotingChatIdRef.current === id) {
+      // This is the same conversation we just created. Preserve the live
+      // useChat state and stream instead of reloading the single persisted
+      // user message from SQLite and erasing the in-flight assistant.
+      promotingChatIdRef.current = null;
+      chatIdRef.current = id;
+      return () => {
+        cancelled = true;
+        if (statusRef.current === 'streaming' || statusRef.current === 'submitted') {
+          persistInflightAssistantTo(chatIdRef.current);
+          try {
+            stop();
+          } catch {
+            // ignore — useChat may already be torn down
+          }
+        }
+      };
+    }
+
     chatIdRef.current = id;
     lastPersistedAssistantRef.current = '';
     sourcesByIdRef.current = new Map();
@@ -581,6 +591,7 @@ const ChatPage = () => {
   const onSend = async (text: string) => {
     const trimmed = text.trim();
     const image = pendingImageRef.current;
+    let createdChatId: string | null = null;
     // Allow image-only sends (no text).
     if (!trimmed && !image) return;
 
@@ -593,6 +604,7 @@ const ChatPage = () => {
         const res = await addChat(db, title);
         const newId = String(res.lastInsertRowId);
         chatIdRef.current = newId;
+        createdChatId = newId;
         // Queue a real AI-generated title once the first response arrives.
         pendingTitleRef.current.set(newId, trimmed || 'Describe this image');
         emitChatsChanged();
@@ -643,6 +655,15 @@ const ChatPage = () => {
       setPendingImage(null);
     } else {
       sendMessage({ text: trimmed });
+    }
+
+    if (createdChatId) {
+      // Promote /new in place by adding the saved id as a route param. A
+      // shallow param update keeps this ChatPage instance (and its stream)
+      // alive, makes the drawer highlight the saved chat, and ensures the
+      // parameter-less "New chat" link resets the conversation.
+      promotingChatIdRef.current = createdChatId;
+      router.setParams({ id: createdChatId });
     }
   };
 
@@ -775,6 +796,13 @@ const ChatPage = () => {
       const asset = result.assets[0];
       if (!asset.base64) {
         Alert.alert('Could not read image', 'Please try a different photo.');
+        return;
+      }
+      if (asset.base64.length > MAX_IMAGE_BASE64_CHARS) {
+        Alert.alert(
+          'Image is too large',
+          'Choose a smaller image or screenshot and try again.'
+        );
         return;
       }
       const mediaType = asset.mimeType ?? 'image/jpeg';

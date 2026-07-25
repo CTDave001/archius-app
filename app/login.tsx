@@ -2,8 +2,8 @@ import BrandMark from '@/components/BrandMark';
 import DragHandle from '@/components/DragHandle';
 import Colors from '@/constants/Colors';
 import { defaultStyles } from '@/constants/Styles';
+import { resolveApiBaseUrl } from '@/utils/apiUrl';
 import { useSignIn, useSignUp } from '@clerk/clerk-expo';
-import Constants from 'expo-constants';
 import { useLocalSearchParams } from 'expo-router';
 import { useState } from 'react';
 import {
@@ -19,15 +19,6 @@ import {
 } from 'react-native';
 
 type Mode = 'form' | 'verify';
-
-const resolveApiBaseUrl = () => {
-  if (process.env.EXPO_PUBLIC_API_URL) return process.env.EXPO_PUBLIC_API_URL;
-  const hostUri =
-    Constants.expoConfig?.hostUri ||
-    (Constants.manifest2 as any)?.extra?.expoGo?.debuggerHost;
-  if (!hostUri) return 'http://localhost:8081';
-  return `http://${hostUri}`;
-};
 
 // The App Review demo account can't receive Client Trust email codes (the
 // reviewer has no inbox access), so its device-verification challenge is

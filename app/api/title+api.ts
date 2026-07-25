@@ -21,6 +21,7 @@ Rules:
 
 The user message you receive is the first message of a new chat. Title it
 based on what the user wants help with.`;
+const MAX_TITLE_REQUEST_BYTES = 8 * 1024;
 
 const cleanTitle = (raw: string): string => {
   return raw
@@ -51,7 +52,51 @@ export async function POST(req: Request) {
     });
   }
 
-  // Light cap on title gen to prevent spam-creating chats.
+  const declaredLength = Number(req.headers.get('content-length') ?? '0');
+  if (Number.isFinite(declaredLength) && declaredLength > MAX_TITLE_REQUEST_BYTES) {
+    return new Response(JSON.stringify({ error: 'Request body is too large' }), {
+      status: 413,
+      headers: { 'content-type': 'application/json' },
+    });
+  }
+
+  let rawBody: string;
+  try {
+    rawBody = await req.text();
+  } catch {
+    return new Response(JSON.stringify({ error: 'Invalid JSON' }), {
+      status: 400,
+      headers: { 'content-type': 'application/json' },
+    });
+  }
+  if (new TextEncoder().encode(rawBody).byteLength > MAX_TITLE_REQUEST_BYTES) {
+    return new Response(JSON.stringify({ error: 'Request body is too large' }), {
+      status: 413,
+      headers: { 'content-type': 'application/json' },
+    });
+  }
+
+  let body: { message?: unknown };
+  try {
+    const parsed = JSON.parse(rawBody);
+    body = parsed && typeof parsed === 'object' ? parsed : {};
+  } catch {
+    return new Response(JSON.stringify({ error: 'Invalid JSON' }), {
+      status: 400,
+      headers: { 'content-type': 'application/json' },
+    });
+  }
+
+  const message = typeof body.message === 'string' ? body.message.trim() : '';
+  if (!message) {
+    return new Response(JSON.stringify({ error: 'Empty message' }), {
+      status: 400,
+      headers: { 'content-type': 'application/json' },
+    });
+  }
+
+  // Light cap on title gen to prevent spam-creating chats. Invalid requests
+  // above do not consume a user's allowance.
   const rate = recordTitleAndCheck(user.userId);
   if (!rate.ok) {
     return new Response(
@@ -64,24 +109,6 @@ export async function POST(req: Request) {
         },
       }
     );
-  }
-
-  let body: { message?: string };
-  try {
-    body = await req.json();
-  } catch {
-    return new Response(JSON.stringify({ error: 'Invalid JSON' }), {
-      status: 400,
-      headers: { 'content-type': 'application/json' },
-    });
-  }
-
-  const message = (body.message ?? '').trim();
-  if (!message) {
-    return new Response(JSON.stringify({ error: 'Empty message' }), {
-      status: 400,
-      headers: { 'content-type': 'application/json' },
-    });
   }
 
   try {
@@ -102,8 +129,9 @@ export async function POST(req: Request) {
       headers: { 'content-type': 'application/json' },
     });
   } catch (e: any) {
+    console.warn('[api/title] generation failed:', e?.message ?? e);
     return new Response(
-      JSON.stringify({ error: 'Title generation failed', detail: e?.message }),
+      JSON.stringify({ error: 'Title generation failed' }),
       { status: 500, headers: { 'content-type': 'application/json' } }
     );
   }

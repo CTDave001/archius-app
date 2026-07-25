@@ -94,8 +94,9 @@ const AUTO_RENEW_DISCLOSURE =
 const Paywall = () => {
   const { bottom } = useSafeAreaInsets();
   const router = useRouter();
-  const { packages, purchasePackage } = useRevenueCat();
+  const { packages, purchasePackage, restorePermissions } = useRevenueCat();
   const [purchasing, setPurchasing] = useState(false);
+  const [restoring, setRestoring] = useState(false);
   const [openFaq, setOpenFaq] = useState<number | null>(null);
 
   const pack =
@@ -119,6 +120,17 @@ const Paywall = () => {
     }
   };
 
+  const onRestore = async () => {
+    setRestoring(true);
+    try {
+      await restorePermissions();
+    } catch {
+      // restorePermissions already presents a useful error.
+    } finally {
+      setRestoring(false);
+    }
+  };
+
   return (
     <View style={[defaultStyles.pageContainer, { paddingBottom: bottom }]}>
       <ScrollView contentContainerStyle={styles.content}>
@@ -126,7 +138,7 @@ const Paywall = () => {
         <Text style={styles.heading}>
           AI that <Text style={styles.headingItalic}>actually</Text> works
         </Text>
-        <Text style={styles.subheading}>Real answers. No daily limits.</Text>
+        <Text style={styles.subheading}>Real answers. Higher daily limits.</Text>
 
         {/* Benefit cards */}
         <View style={styles.benefits}>
@@ -238,6 +250,17 @@ const Paywall = () => {
           accessibilityLabel="Maybe later, close paywall"
           accessibilityRole="button">
           <Text style={styles.maybeLaterText}>Maybe later</Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          style={styles.restore}
+          disabled={restoring}
+          onPress={onRestore}
+          accessibilityLabel="Restore purchases"
+          accessibilityRole="button">
+          <Text style={styles.restoreText}>
+            {restoring ? 'Restoring…' : 'Restore Purchases'}
+          </Text>
         </TouchableOpacity>
 
         <View style={styles.legalRow}>
@@ -422,6 +445,12 @@ const styles = StyleSheet.create({
     fontFamily: 'Inter_500Medium',
     fontSize: 14,
     color: Colors.slate,
+  },
+  restore: { alignItems: 'center', paddingVertical: 8 },
+  restoreText: {
+    fontFamily: 'Inter_500Medium',
+    fontSize: 13,
+    color: Colors.blueprint,
   },
   unavailableNote: {
     padding: 14,

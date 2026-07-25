@@ -156,6 +156,13 @@ export const setActiveChatUser = (userId: string | null) => {
   activeChatUserId = userId;
 };
 
+const requireActiveChatUser = (): string => {
+  if (!activeChatUserId) {
+    throw new Error('No signed-in chat user is active');
+  }
+  return activeChatUserId;
+};
+
 // One-time adoption of rows created before v7 (user_id NULL). The first
 // account that signs in after the update owns them — on single-user devices
 // (the overwhelming case) that's exactly the person who created them.
@@ -166,30 +173,29 @@ export const claimLegacyChats = async (db: SQLiteDatabase, userId: string) => {
 const nowIso = () => new Date().toISOString();
 
 export const addChat = async (db: SQLiteDatabase, title: string) => {
+  const userId = requireActiveChatUser();
   return await db.runAsync(
     'INSERT INTO chats (title, updated_at, user_id) VALUES (?, ?, ?)',
     title,
     nowIso(),
-    activeChatUserId
+    userId
   );
 };
 
 export const getChats = async (db: SQLiteDatabase) => {
-  if (activeChatUserId) {
-    return await db.getAllAsync<{ id: number; title: string; updated_at: string | null }>(
-      'SELECT * FROM chats WHERE user_id = ? ORDER BY COALESCE(updated_at, datetime(0)) DESC, id DESC',
-      activeChatUserId
-    );
-  }
+  const userId = requireActiveChatUser();
   return await db.getAllAsync<{ id: number; title: string; updated_at: string | null }>(
-    'SELECT * FROM chats ORDER BY COALESCE(updated_at, datetime(0)) DESC, id DESC'
+    'SELECT * FROM chats WHERE user_id = ? ORDER BY COALESCE(updated_at, datetime(0)) DESC, id DESC',
+    userId
   );
 };
 
 export const getChat = async (db: SQLiteDatabase, chatId: number) => {
+  const userId = requireActiveChatUser();
   return await db.getFirstAsync<{ id: number; title: string; updated_at: string | null }>(
-    'SELECT * FROM chats WHERE id = ?',
-    chatId
+    'SELECT id, title, updated_at FROM chats WHERE id = ? AND user_id = ?',
+    chatId,
+    userId
   );
 };
 
@@ -245,6 +251,7 @@ const parseEvent = (raw: string | null): EventDraft | undefined => {
 };
 
 export const getMessages = async (db: SQLiteDatabase, chatId: number): Promise<Message[]> => {
+  const userId = requireActiveChatUser();
   const rows = await db.getAllAsync<{
     content: string;
     role: string;
@@ -253,8 +260,13 @@ export const getMessages = async (db: SQLiteDatabase, chatId: number): Promise<M
     event: string | null;
     image_uri: string | null;
   }>(
-    'SELECT content, role, sources, email, event, image_uri FROM messages WHERE chat_id = ? ORDER BY id ASC',
-    chatId
+    `SELECT m.content, m.role, m.sources, m.email, m.event, m.image_uri
+       FROM messages m
+       JOIN chats c ON c.id = m.chat_id
+      WHERE m.chat_id = ? AND c.user_id = ?
+      ORDER BY m.id ASC`,
+    chatId,
+    userId
   );
   return rows.map((row) => ({
     content: row.content,
@@ -271,6 +283,7 @@ export const addMessage = async (
   chatId: number,
   { content, role, sources, email, event, imageUri }: Message
 ) => {
+  const userId = requireActiveChatUser();
   // Transactional so the chat's updated_at bump and the message INSERT
   // can't end up split (which would show a "recently updated" chat with no
   // new message in the drawer).
@@ -278,7 +291,15 @@ export const addMessage = async (
   const emailJson = email ? JSON.stringify(email) : null;
   const eventJson = event ? JSON.stringify(event) : null;
   await db.withTransactionAsync(async () => {
-    await db.runAsync('UPDATE chats SET updated_at = ? WHERE id = ?', nowIso(), chatId);
+    const ownedChat = await db.runAsync(
+      'UPDATE chats SET updated_at = ? WHERE id = ? AND user_id = ?',
+      nowIso(),
+      chatId,
+      userId
+    );
+    if (ownedChat.changes !== 1) {
+      throw new Error('Chat not found for the active user');
+    }
     await db.runAsync(
       'INSERT INTO messages (chat_id, content, role, sources, email, event, image_uri) VALUES (?, ?, ?, ?, ?, ?, ?)',
       chatId,
@@ -293,13 +314,18 @@ export const addMessage = async (
 };
 
 export const deleteChat = async (db: SQLiteDatabase, chatId: number) => {
+  const userId = requireActiveChatUser();
   // Collect persisted image file paths BEFORE the cascade so we can clean
   // up the files. (Doing this after delete would lose the URIs.)
   let imageUris: string[] = [];
   try {
     const rows = await db.getAllAsync<{ image_uri: string | null }>(
-      'SELECT image_uri FROM messages WHERE chat_id = ? AND image_uri IS NOT NULL',
-      chatId
+      `SELECT m.image_uri
+         FROM messages m
+         JOIN chats c ON c.id = m.chat_id
+        WHERE m.chat_id = ? AND c.user_id = ? AND m.image_uri IS NOT NULL`,
+      chatId,
+      userId
     );
     imageUris = rows.map((r) => r.image_uri).filter((u): u is string => !!u);
   } catch {
@@ -310,28 +336,41 @@ export const deleteChat = async (db: SQLiteDatabase, chatId: number) => {
   // in migrateDbIfNeeded. Still safe-belt the message cleanup in case the
   // pragma ever regresses.
   await db.withTransactionAsync(async () => {
-    await db.runAsync('DELETE FROM messages WHERE chat_id = ?', chatId);
-    await db.runAsync('DELETE FROM chats WHERE id = ?', chatId);
+    await db.runAsync(
+      `DELETE FROM messages
+        WHERE chat_id = ?
+          AND EXISTS (
+                SELECT 1 FROM chats
+                 WHERE chats.id = messages.chat_id AND chats.user_id = ?
+              )`,
+      chatId,
+      userId
+    );
+    const deleted = await db.runAsync(
+      'DELETE FROM chats WHERE id = ? AND user_id = ?',
+      chatId,
+      userId
+    );
+    if (deleted.changes !== 1) {
+      throw new Error('Chat not found for the active user');
+    }
   });
 
-  // Best-effort file cleanup. Lazy-imported so this file doesn't pull
-  // expo-file-system at top level.
-  if (imageUris.length > 0) {
-    try {
-      const FileSystem: any = await import('expo-file-system/legacy');
-      await Promise.all(
-        imageUris.map((uri) =>
-          FileSystem.deleteAsync(uri, { idempotent: true }).catch(() => undefined)
-        )
-      );
-    } catch {
-      // ignore — orphan files are harmless until the next wipe
-    }
-  }
+  await deleteImageUris(imageUris);
 };
 
 export const renameChat = async (db: SQLiteDatabase, chatId: number, title: string) => {
-  return await db.runAsync('UPDATE chats SET title = ? WHERE id = ?', title, chatId);
+  const userId = requireActiveChatUser();
+  const result = await db.runAsync(
+    'UPDATE chats SET title = ? WHERE id = ? AND user_id = ?',
+    title,
+    chatId,
+    userId
+  );
+  if (result.changes !== 1) {
+    throw new Error('Chat not found for the active user');
+  }
+  return result;
 };
 
 // Delete the most recent `count` messages from the chat (used by message
@@ -342,11 +381,18 @@ export const deleteLastNMessages = async (
   count: number
 ) => {
   if (count <= 0) return;
+  const userId = requireActiveChatUser();
   return await db.runAsync(
     `DELETE FROM messages WHERE id IN (
-       SELECT id FROM messages WHERE chat_id = ? ORDER BY id DESC LIMIT ?
+       SELECT m.id
+         FROM messages m
+         JOIN chats c ON c.id = m.chat_id
+        WHERE m.chat_id = ? AND c.user_id = ?
+        ORDER BY m.id DESC
+        LIMIT ?
      )`,
     chatId,
+    userId,
     count
   );
 };
@@ -354,23 +400,66 @@ export const deleteLastNMessages = async (
 // Search across chat titles AND message contents. Returns distinct chats
 // whose title matches OR who have a message containing the query.
 export const searchChats = async (db: SQLiteDatabase, query: string) => {
+  const userId = requireActiveChatUser();
   const q = `%${query.toLowerCase()}%`;
-  // Scope to the signed-in user; '' matches no user_id when none registered.
   return await db.getAllAsync<{ id: number; title: string; updated_at: string | null }>(
     `SELECT c.id, c.title, c.updated_at
        FROM chats c
-      WHERE (? IS NULL OR c.user_id = ?)
+      WHERE c.user_id = ?
         AND (LOWER(c.title) LIKE ?
          OR EXISTS (
               SELECT 1 FROM messages m
                WHERE m.chat_id = c.id AND LOWER(m.content) LIKE ?
-            ))
+             ))
       ORDER BY COALESCE(c.updated_at, datetime(0)) DESC, c.id DESC`,
-    activeChatUserId,
-    activeChatUserId,
+    userId,
     q,
     q
   );
+};
+
+const deleteImageUris = async (imageUris: string[]) => {
+  if (imageUris.length === 0) return;
+  try {
+    const FileSystem: any = await import('expo-file-system/legacy');
+    await Promise.all(
+      imageUris.map((uri) =>
+        FileSystem.deleteAsync(uri, { idempotent: true }).catch(() => undefined)
+      )
+    );
+  } catch {
+    // Best-effort cleanup: database ownership/deletion must not depend on the
+    // native filesystem module being available.
+  }
+};
+
+/**
+ * Deletes only one Clerk user's local chats and their referenced image files.
+ * The caller passes the user id captured before Clerk account deletion, since
+ * deleting the account can immediately clear the active auth state.
+ */
+export const deleteUserChats = async (db: SQLiteDatabase, userId: string) => {
+  if (!userId) throw new Error('A user id is required to delete local chats');
+
+  const rows = await db.getAllAsync<{ image_uri: string | null }>(
+    `SELECT m.image_uri
+       FROM messages m
+       JOIN chats c ON c.id = m.chat_id
+      WHERE c.user_id = ? AND m.image_uri IS NOT NULL`,
+    userId
+  );
+  const imageUris = rows.map((row) => row.image_uri).filter((uri): uri is string => !!uri);
+
+  await db.withTransactionAsync(async () => {
+    await db.runAsync(
+      `DELETE FROM messages
+        WHERE chat_id IN (SELECT id FROM chats WHERE user_id = ?)`,
+      userId
+    );
+    await db.runAsync('DELETE FROM chats WHERE user_id = ?', userId);
+  });
+
+  await deleteImageUris(imageUris);
 };
 
 // Group chats into buckets based on updated_at relative to "now".

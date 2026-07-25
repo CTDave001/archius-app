@@ -21,22 +21,29 @@ import { RevenueCatProvider } from '@/providers/RevenueCat';
 const ScopeDbToUser = ({ children }: { children: React.ReactNode }) => {
   const { userId } = useAuth();
   const db = useSQLiteContext();
-  const [ready, setReady] = React.useState(false);
-  setActiveChatUser(userId ?? null);
+  const [readyUserId, setReadyUserId] = React.useState<string | null>(null);
+
   useEffect(() => {
     let cancelled = false;
+    setReadyUserId(null);
+    setActiveChatUser(userId ?? null);
+
     (async () => {
       if (userId) {
         await claimLegacyChats(db, userId).catch(() => undefined);
       }
-      if (!cancelled) setReady(true);
+      if (!cancelled && userId) setReadyUserId(userId);
     })();
+
     return () => {
       cancelled = true;
       setActiveChatUser(null);
     };
   }, [db, userId]);
-  if (!ready) return null; // single-digit ms — one UPDATE on a local DB
+
+  // Fail closed while Clerk changes accounts: never render chat consumers
+  // under a stale activeChatUserId, even for a single transition frame.
+  if (!userId || readyUserId !== userId) return null;
   return <>{children}</>;
 };
 

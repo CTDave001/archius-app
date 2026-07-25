@@ -25,11 +25,18 @@ npx expo start
 Client (safe to bundle):
 - `EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY` — from clerk.com
 - `EXPO_PUBLIC_RC_APPLE_KEY` / `EXPO_PUBLIC_RC_GOOGLE_KEY` — RevenueCat (optional during dev)
-- `EXPO_PUBLIC_API_URL` — optional override for the API base URL
+- `EXPO_PUBLIC_API_URL` — backend origin; required for standalone production builds
 
 Server-only (never prefix with `EXPO_PUBLIC_`):
 - `DEEPSEEK_API_KEY` — DeepSeek API key
+- `GEMINI_API_KEY` — Google AI Studio key for image messages
+- `GEMINI_MODEL` — optional Gemini model override
+- `TAVILY_API_KEY` — Tavily key for Pro web search
 - `CLERK_SECRET_KEY` — for verifying JWTs in the API route
+- `REVENUECAT_SECRET_KEY` — server key used to verify current entitlements
+- `REVENUECAT_WEBHOOK_AUTH` — shared authorization value for RevenueCat webhooks
+- `REVIEW_DEMO_EMAIL` — the single App Review account allowed through the review bridge
+- `HEALTH_CHECK_TOKEN` — protects the synthetic `/api/health` provider check
 
 ## Project structure
 

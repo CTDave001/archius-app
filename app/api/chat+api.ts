@@ -25,6 +25,76 @@ const google = createGoogleGenerativeAI({
   apiKey: env('GEMINI_API_KEY'),
 });
 
+const MAX_REQUEST_BYTES = 4 * 1024 * 1024;
+const MAX_MESSAGES = 100;
+const MAX_TEXT_CHARS = 120_000;
+const MAX_TEXT_PART_CHARS = 30_000;
+const MAX_CURRENT_IMAGES = 1;
+
+const validateMessages = (
+  value: unknown
+): { ok: true; messages: UIMessage[] } | { ok: false; detail: string } => {
+  if (!Array.isArray(value) || value.length === 0 || value.length > MAX_MESSAGES) {
+    return { ok: false, detail: `messages must contain 1-${MAX_MESSAGES} items` };
+  }
+
+  let textChars = 0;
+  let lastUserIndex = -1;
+
+  for (let i = 0; i < value.length; i += 1) {
+    const message = value[i] as any;
+    if (
+      !message ||
+      typeof message !== 'object' ||
+      !['system', 'user', 'assistant'].includes(message.role) ||
+      !Array.isArray(message.parts)
+    ) {
+      return { ok: false, detail: 'messages contain an invalid item' };
+    }
+    if (message.role === 'user') lastUserIndex = i;
+
+    for (const part of message.parts) {
+      if (!part || typeof part !== 'object' || typeof part.type !== 'string') {
+        return { ok: false, detail: 'messages contain an invalid part' };
+      }
+      if (part.type === 'text') {
+        if (typeof part.text !== 'string' || part.text.length > MAX_TEXT_PART_CHARS) {
+          return { ok: false, detail: 'a message is too long' };
+        }
+        textChars += part.text.length;
+        if (textChars > MAX_TEXT_CHARS) {
+          return { ok: false, detail: 'conversation text is too long' };
+        }
+      }
+    }
+  }
+
+  if (lastUserIndex < 0) {
+    return { ok: false, detail: 'a user message is required' };
+  }
+
+  // Only the latest user turn is sent to a vision model. Historical file://
+  // parts are stripped below, so validate the current image payload strictly.
+  const currentParts = (value[lastUserIndex] as any).parts as any[];
+  const currentImages = currentParts.filter((part) => part?.type === 'file');
+  if (currentImages.length > MAX_CURRENT_IMAGES) {
+    return { ok: false, detail: 'only one image may be attached' };
+  }
+  for (const image of currentImages) {
+    if (
+      typeof image.mediaType !== 'string' ||
+      !image.mediaType.startsWith('image/') ||
+      typeof image.url !== 'string' ||
+      !image.url.startsWith('data:image/') ||
+      !image.url.includes(';base64,')
+    ) {
+      return { ok: false, detail: 'the current image attachment is invalid' };
+    }
+  }
+
+  return { ok: true, messages: value as UIMessage[] };
+};
+
 // True if the most recent user message carries an image attachment.
 const lastUserMessageHasImage = (messages: UIMessage[]): boolean => {
   for (let i = messages.length - 1; i >= 0; i--) {
@@ -70,6 +140,14 @@ export async function POST(req: Request) {
     );
   }
 
+  const declaredLength = Number(req.headers.get('content-length') ?? '0');
+  if (Number.isFinite(declaredLength) && declaredLength > MAX_REQUEST_BYTES) {
+    return new Response(JSON.stringify({ error: 'Request body is too large' }), {
+      status: 413,
+      headers: { 'content-type': 'application/json' },
+    });
+  }
+
   const user = await authenticate(req);
   if (!user) {
     return new Response(JSON.stringify({ error: 'Unauthorized' }), {
@@ -78,11 +156,44 @@ export async function POST(req: Request) {
     });
   }
 
-  let body: { messages: UIMessage[]; modelTier?: ModelTier; webSearch?: boolean };
+  let rawBody: string;
   try {
-    body = await req.json();
+    rawBody = await req.text();
   } catch {
     return new Response(JSON.stringify({ error: 'Invalid JSON body' }), {
+      status: 400,
+      headers: { 'content-type': 'application/json' },
+    });
+  }
+  if (new TextEncoder().encode(rawBody).byteLength > MAX_REQUEST_BYTES) {
+    return new Response(JSON.stringify({ error: 'Request body is too large' }), {
+      status: 413,
+      headers: { 'content-type': 'application/json' },
+    });
+  }
+
+  let parsedBody: any;
+  try {
+    parsedBody = JSON.parse(rawBody);
+  } catch {
+    return new Response(JSON.stringify({ error: 'Invalid JSON body' }), {
+      status: 400,
+      headers: { 'content-type': 'application/json' },
+    });
+  }
+  const validated = validateMessages(parsedBody?.messages);
+  if (!validated.ok) {
+    return new Response(JSON.stringify({ error: 'Invalid request', detail: validated.detail }), {
+      status: 400,
+      headers: { 'content-type': 'application/json' },
+    });
+  }
+  const body: { messages: UIMessage[]; modelTier?: ModelTier; webSearch?: boolean } = {
+    ...parsedBody,
+    messages: validated.messages,
+  };
+  if (body.modelTier !== undefined && body.modelTier !== 'flash' && body.modelTier !== 'pro') {
+    return new Response(JSON.stringify({ error: 'Invalid model tier' }), {
       status: 400,
       headers: { 'content-type': 'application/json' },
     });
@@ -165,9 +276,10 @@ export async function POST(req: Request) {
   try {
     modelMessages = await convertToModelMessages(messagesForModel);
   } catch (e: any) {
+    console.warn('[api/chat] message conversion failed:', e?.message ?? e);
     return new Response(
-      JSON.stringify({ error: 'Could not convert messages', detail: e?.message }),
-      { status: 500, headers: { 'content-type': 'application/json' } }
+      JSON.stringify({ error: 'Could not process messages' }),
+      { status: 400, headers: { 'content-type': 'application/json' } }
     );
   }
 
@@ -272,12 +384,12 @@ export async function POST(req: Request) {
       },
     });
     return result.toUIMessageStreamResponse({
-      onError: (error) =>
-        error instanceof Error ? error.message : 'Unknown stream error',
+      onError: () => 'The AI service could not complete this response.',
     });
   } catch (e: any) {
+    console.warn('[api/chat] stream setup failed:', e?.message ?? e);
     return new Response(
-      JSON.stringify({ error: 'Stream failed', detail: e?.message }),
+      JSON.stringify({ error: 'The AI service could not start this response' }),
       { status: 500, headers: { 'content-type': 'application/json' } }
     );
   }

@@ -128,14 +128,19 @@ class RootErrorBoundary extends React.Component<
     return { error };
   }
 
-  componentDidCatch() {
+  componentDidCatch(error: Error, info: React.ErrorInfo) {
+    console.error('[RootErrorBoundary]', error, info.componentStack);
     SplashScreen.hideAsync().catch(() => undefined);
   }
 
   render() {
     if (this.state.error) {
-      const message = this.state.error.message || String(this.state.error);
-      const stack = (this.state.error.stack || '').split('\n').slice(0, 8).join('\n');
+      const message = __DEV__
+        ? this.state.error.message || String(this.state.error)
+        : 'Please try again. If the problem continues, close and reopen Archius.';
+      const stack = __DEV__
+        ? (this.state.error.stack || '').split('\n').slice(0, 8).join('\n')
+        : '';
       return (
         <View style={{ flex: 1, backgroundColor: Colors.cream, paddingTop: 80 }}>
           <ScrollView style={{ paddingHorizontal: 24 }}>

@@ -3,6 +3,8 @@ import Colors from '@/constants/Colors';
 import { defaultStyles } from '@/constants/Styles';
 import { useRevenueCat } from '@/providers/RevenueCat';
 import { FREE_DAILY_MESSAGE_LIMIT, PRO_DAILY_FLASH_LIMIT } from '@/utils/ai';
+import { resolveApiBaseUrl } from '@/utils/apiUrl';
+import { deleteUserChats } from '@/utils/Database';
 import { emitChatsChanged } from '@/utils/events';
 import { isHapticsEnabled, setHapticsEnabled } from '@/utils/haptics';
 import { useAuth, useUser } from '@clerk/clerk-expo';
@@ -31,19 +33,8 @@ const SUPPORT_URL = 'mailto:hello@archius.app';
 const APPLE_SUBSCRIPTIONS_URL = 'https://apps.apple.com/account/subscriptions';
 const GOOGLE_SUBSCRIPTIONS_URL = 'https://play.google.com/store/account/subscriptions';
 
-const resolveApiBaseUrl = () => {
-  if (process.env.EXPO_PUBLIC_API_URL) return process.env.EXPO_PUBLIC_API_URL;
-  const Constants = require('expo-constants').default;
-  const hostUri = Constants.expoConfig?.hostUri;
-  if (!hostUri) return 'http://localhost:8081';
-  if (hostUri.includes('exp.direct') || hostUri.includes('exp.host')) {
-    return `https://${hostUri.split(':')[0]}`;
-  }
-  return `http://${hostUri}`;
-};
-
 const Settings = () => {
-  const { signOut, getToken } = useAuth();
+  const { signOut, getToken, userId } = useAuth();
   const { user } = useUser();
   const { isPro, restorePermissions } = useRevenueCat();
   const db = useSQLiteContext();
@@ -71,26 +62,6 @@ const Settings = () => {
       cancelled = true;
     };
   }, [getToken]);
-
-  const wipeLocalData = async () => {
-    try {
-      await db.withTransactionAsync(async () => {
-        await db.execAsync('DELETE FROM messages; DELETE FROM chats;');
-      });
-    } catch (e) {
-      console.warn('Failed to wipe local data', e);
-    }
-    // Also nuke the persisted image directory so attached photos don't
-    // outlive the chat data. Best-effort, lazy-imported.
-    try {
-      const FileSystem: any = await import('expo-file-system/legacy');
-      await FileSystem.deleteAsync(FileSystem.documentDirectory + 'msg-images/', {
-        idempotent: true,
-      });
-    } catch {
-      // ignore — orphan image files are harmless
-    }
-  };
 
   const onSignOut = () => {
     // Chats are scoped per Clerk user in the local DB (v7), so signing out
@@ -127,17 +98,34 @@ const Settings = () => {
           text: 'Delete',
           style: 'destructive',
           onPress: async () => {
+            if (!user || !userId) {
+              Alert.alert('Could not delete account', 'Your account is still loading. Try again.');
+              return;
+            }
+            // Capture the id before deletion: Clerk clears auth state as soon
+            // as the account goes away, but local cleanup still needs it.
+            const deletedUserId = userId;
             // Delete the Clerk account FIRST. Only wipe local data if that
             // succeeded — otherwise a delete failure leaves the user with
             // no local chats AND an account still active.
             try {
-              await user?.delete();
+              await user.delete();
             } catch (e: any) {
               Alert.alert('Could not delete account', e?.message ?? 'Try again later.');
               return;
             }
-            await wipeLocalData();
-            emitChatsChanged();
+            try {
+              await deleteUserChats(db, deletedUserId);
+              emitChatsChanged();
+            } catch (e: any) {
+              // The account is already gone, so make the residual local-data
+              // state explicit instead of silently claiming deletion worked.
+              console.warn('Failed to delete local chats after account deletion', e);
+              Alert.alert(
+                'Account deleted',
+                'Your account was deleted, but some chat data could not be removed from this device. Reinstalling Archius will clear it.'
+              );
+            }
           },
         },
       ]

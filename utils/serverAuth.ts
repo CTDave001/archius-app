@@ -1,12 +1,10 @@
 // Shared server-side auth helper. Reads the Clerk JWT, verifies it, and
 // resolves the user's Pro entitlement.
 //
-// Pro entitlement resolution, in order:
-//   1. Clerk publicMetadata.isPro — written by the RevenueCat webhook. Fast
-//      (often already in the JWT), but only as reliable as the webhook.
-//   2. RevenueCat's REST API — authoritative. Consulted whenever (1) does not
-//      already say "Pro", and the result is written back to Clerk so the fast
-//      path takes over on subsequent requests.
+// Pro entitlement resolution:
+//   1. RevenueCat's REST API is the source of truth on every cache miss.
+//   2. Clerk publicMetadata.isPro is a webhook-maintained availability
+//      fallback when RevenueCat cannot be reached.
 //
 // Why (2) exists: the webhook was silently 401ing every event (a trailing
 // newline in REVENUECAT_WEBHOOK_AUTH — see utils/env.ts), so publicMetadata
@@ -15,21 +13,20 @@
 // recover from it, because the webhook was the only path to the truth and a
 // missed event was gone forever.
 //
-// Asking RevenueCat directly makes the webhook a latency optimization rather
-// than a correctness dependency: a dropped event now costs one slow request,
-// not a permanently downgraded customer. The client is never trusted — the
-// entitlement always comes from RevenueCat or Clerk, never from the app.
+// Asking RevenueCat directly makes the webhook an availability optimization
+// rather than a permanent source of truth. The client and its potentially
+// stale JWT metadata are never trusted for the entitlement decision.
 
 import { createClerkClient, verifyToken } from '@clerk/backend';
 import { env } from '@/utils/env';
 
 const PRO_ENTITLEMENT_ID = 'pro';
 
-// Positive results are cheap to re-verify and we want revocation to land
-// promptly; negative results are the common case (free users) and re-checking
-// them on every request would hammer RevenueCat for no benefit.
+// Keep both directions short: revocations should land promptly, and a user
+// who just purchased must not remain stuck in a cached free state for several
+// minutes if their webhook is handled by another serverless instance.
 const PRO_TTL_MS = 60_000;
-const FREE_TTL_MS = 5 * 60_000;
+const FREE_TTL_MS = 60_000;
 
 type CacheEntry = { isPro: boolean; expiresAt: number };
 const proCache = new Map<string, CacheEntry>();
@@ -50,7 +47,7 @@ export type AuthedUser = {
  * Returns null if RevenueCat isn't configured or the call fails — callers
  * must treat null as "unknown", not as "not Pro".
  */
-async function revenueCatHasPro(userId: string): Promise<boolean | null> {
+export async function getRevenueCatProStatus(userId: string): Promise<boolean | null> {
   const rcKey = env('REVENUECAT_SECRET_KEY');
   if (!rcKey) return null;
 
@@ -81,9 +78,9 @@ async function revenueCatHasPro(userId: string): Promise<boolean | null> {
 }
 
 /**
- * Resolve Pro state for a user, preferring Clerk's cached metadata and
- * falling back to RevenueCat. Writes a positive RevenueCat result back to
- * Clerk so the next request can take the fast path.
+ * Resolve Pro state for a user. RevenueCat is authoritative; Clerk metadata
+ * is kept in sync in both directions and is used only if RevenueCat is
+ * temporarily unavailable.
  */
 async function resolveIsPro(userId: string, secretKey: string): Promise<boolean> {
   const client = getClerkClient(secretKey);
@@ -98,21 +95,23 @@ async function resolveIsPro(userId: string, secretKey: string): Promise<boolean>
     console.warn('[auth] Clerk getUser failed:', e?.message ?? e);
   }
 
-  if (clerkIsPro) return true;
-
-  const rcIsPro = await revenueCatHasPro(userId);
+  const rcIsPro = await getRevenueCatProStatus(userId);
   if (rcIsPro === null) return clerkIsPro; // unknown — fall back to what Clerk said
-  if (!rcIsPro) return false;
 
-  // RevenueCat says Pro but Clerk didn't know: the webhook was missed. Heal it
-  // so we stop paying for this lookup on every request.
-  try {
-    await client.users.updateUserMetadata(userId, { publicMetadata: { isPro: true } });
-    console.info('[auth] healed missing Pro entitlement from RevenueCat for', userId);
-  } catch (e: any) {
-    console.warn('[auth] could not write healed entitlement to Clerk:', e?.message ?? e);
+  if (rcIsPro !== clerkIsPro) {
+    // Heal missed or out-of-order webhooks in either direction. In particular,
+    // this prevents an old Clerk "true" from granting Pro forever after a
+    // cancellation/expiration event was missed.
+    try {
+      await client.users.updateUserMetadata(userId, {
+        publicMetadata: { isPro: rcIsPro },
+      });
+      console.info('[auth] reconciled Pro entitlement from RevenueCat for', userId);
+    } catch (e: any) {
+      console.warn('[auth] could not reconcile entitlement to Clerk:', e?.message ?? e);
+    }
   }
-  return true;
+  return rcIsPro;
 }
 
 /**
@@ -122,10 +121,10 @@ async function resolveIsPro(userId: string, secretKey: string): Promise<boolean>
 export async function authenticate(req: Request): Promise<AuthedUser | null> {
   const secretKey = env('CLERK_SECRET_KEY');
   if (!secretKey) {
-    // Dev convenience: no CLERK_SECRET_KEY set means we accept anything as
-    // dev-anonymous. Never reachable in prod (key is always set there).
-    console.warn('[auth] CLERK_SECRET_KEY not set — allowing anonymous request');
-    return { userId: 'dev-anonymous', isPro: false };
+    // Authentication must fail closed in every environment. A missing
+    // production variable must never turn a paid API endpoint public.
+    console.error('[auth] CLERK_SECRET_KEY is not configured');
+    return null;
   }
 
   const authHeader = req.headers.get('authorization');
@@ -138,14 +137,6 @@ export async function authenticate(req: Request): Promise<AuthedUser | null> {
     if (!payload.sub) return null;
     userId = payload.sub;
 
-    // If the JWT template carries publicMetadata.isPro we can trust a *true*
-    // here and skip the lookups entirely. A false is NOT trusted: the claim is
-    // baked in when the token is minted, so a user who upgraded mid-session
-    // would be stuck on free until their token rotated.
-    const meta = (payload as any).public_metadata ?? (payload as any).pub;
-    if (meta && typeof meta === 'object' && meta.isPro === true) {
-      return { userId, isPro: true };
-    }
   } catch (e: any) {
     console.warn('[auth] verifyToken failed:', e?.reason || e?.message || e);
     return null;
