@@ -1,9 +1,16 @@
 import Colors from '@/constants/Colors';
 import { defaultStyles } from '@/constants/Styles';
-import { useSSO } from '@clerk/clerk-expo';
+import {
+  findMostRecentActiveSession,
+  findOnlyPendingSession,
+  getClerkErrorMessage,
+  isAlreadySignedInError,
+  isCancelledClerkFlow,
+} from '@/utils/clerkSession';
+import { useAuth, useSessionList, useSSO } from '@clerk/clerk-expo';
 import { Ionicons } from '@expo/vector-icons';
 import * as Linking from 'expo-linking';
-import { Link } from 'expo-router';
+import { Link, useRouter } from 'expo-router';
 import * as WebBrowser from 'expo-web-browser';
 import { useCallback, useEffect, useState } from 'react';
 import { ActivityIndicator, Alert, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
@@ -15,8 +22,16 @@ type Strategy = 'oauth_apple' | 'oauth_google';
 
 const BottomLoginSheet = () => {
   const { bottom } = useSafeAreaInsets();
+  const router = useRouter();
+  const { isLoaded: isAuthLoaded, isSignedIn } = useAuth();
+  const {
+    isLoaded: isSessionListLoaded,
+    sessions,
+    setActive: setExistingSessionActive,
+  } = useSessionList();
   const { startSSOFlow } = useSSO();
   const [pendingStrategy, setPendingStrategy] = useState<Strategy | null>(null);
+  const authReady = isAuthLoaded && isSessionListLoaded;
 
   useEffect(() => {
     void WebBrowser.warmUpAsync();
@@ -25,59 +40,125 @@ const BottomLoginSheet = () => {
     };
   }, []);
 
-  const onSSO = useCallback(
-    async (strategy: Strategy) => {
-      if (pendingStrategy) return;
-      setPendingStrategy(strategy);
-      try {
-        const redirectUrl = Linking.createURL('oauth-native-callback');
-        const result: any = await startSSOFlow({ strategy, redirectUrl });
-        const { createdSessionId, signIn, signUp, setActive } = result;
+  const enterApp = useCallback(() => {
+    router.replace('/(auth)/(drawer)/(chat)/new');
+  }, [router]);
 
-        // Top-level session set on first sign-in of existing user.
-        // Sign-up flow puts it on signUp.createdSessionId once requirements satisfied.
-        const sessionId = createdSessionId || signUp?.createdSessionId || signIn?.createdSessionId;
+  const resumeExistingSession = useCallback(async (): Promise<boolean> => {
+    if (isSignedIn) {
+      enterApp();
+      return true;
+    }
+    if (!isSessionListLoaded || !setExistingSessionActive) return false;
 
-        if (sessionId && setActive) {
-          await setActive({ session: sessionId });
-          return;
-        }
+    const existingSession = findMostRecentActiveSession(sessions);
+    if (!existingSession) return false;
 
-        // New user via OAuth: try to auto-complete the sign-up. Clerk pulls
-        // email + name from the OAuth payload but won't auto-finalize if
-        // anything is "required" in the instance config.
-        if (signUp && signUp.status === 'missing_requirements') {
-          try {
-            const updated = await signUp.update({});
-            if (updated.createdSessionId && setActive) {
-              await setActive({ session: updated.createdSessionId });
-              return;
-            }
-            Alert.alert(
-              'Sign-up incomplete',
-              `Still missing: ${(updated.missingFields ?? []).join(', ') || 'unknown'}\nUnverified: ${(updated.unverifiedFields ?? []).join(', ') || 'none'}`
-            );
-            return;
-          } catch (innerErr: any) {
-            Alert.alert('Sign-up failed', innerErr?.message ?? 'Update step failed.');
+    await setExistingSessionActive({ session: existingSession.id });
+    enterApp();
+    return true;
+  }, [
+    enterApp,
+    isSessionListLoaded,
+    isSignedIn,
+    sessions,
+    setExistingSessionActive,
+  ]);
+
+  const completeSSOFlow = useCallback(
+    async (result: any) => {
+      const { createdSessionId, signIn, signUp, setActive } = result;
+
+      // Top-level session set on first sign-in of existing user.
+      // Sign-up flow puts it on signUp.createdSessionId once requirements satisfied.
+      const sessionId = createdSessionId || signUp?.createdSessionId || signIn?.createdSessionId;
+
+      if (sessionId && setActive) {
+        await setActive({ session: sessionId });
+        enterApp();
+        return;
+      }
+
+      // New user via OAuth: try to auto-complete the sign-up. Clerk pulls
+      // email + name from the OAuth payload but won't auto-finalize if
+      // anything is "required" in the instance config.
+      if (signUp && signUp.status === 'missing_requirements') {
+        try {
+          const updated = await signUp.update({});
+          if (updated.createdSessionId && setActive) {
+            await setActive({ session: updated.createdSessionId });
+            enterApp();
             return;
           }
+          Alert.alert(
+            'Sign-up incomplete',
+            'A little more account information is required. Please try signing in again.'
+          );
+          return;
+        } catch (innerError: unknown) {
+          Alert.alert(
+            'Sign-up failed',
+            getClerkErrorMessage(innerError, 'We could not finish creating your account.')
+          );
+          return;
         }
+      }
 
-        // OAuth roundtrip didn't produce a session (user likely closed the
-        // browser mid-flow). Stay quiet — they can simply tap again.
-      } catch (err: any) {
-        if (err?.code !== 'cancelled') {
+      // OAuth roundtrip didn't produce a session (user likely closed the
+      // browser mid-flow). Stay quiet — they can simply tap again.
+    },
+    [enterApp]
+  );
+
+  const onSSO = useCallback(
+    async (strategy: Strategy) => {
+      if (pendingStrategy || !authReady) return;
+      setPendingStrategy(strategy);
+      try {
+        if (await resumeExistingSession()) return;
+
+        const redirectUrl = Linking.createURL('oauth-native-callback');
+        try {
+          const result = await startSSOFlow({ strategy, redirectUrl });
+          await completeSSOFlow(result);
+        } catch (error: unknown) {
+          if (!isAlreadySignedInError(error)) throw error;
+          if (await resumeExistingSession()) return;
+
+          // An interrupted Clerk task can leave one pending local session.
+          // Clear only that unambiguous stale state, then retry the requested
+          // provider once. Never remove sessions from a multi-session device.
+          const pendingSession = findOnlyPendingSession(
+            isSessionListLoaded ? sessions : undefined
+          );
+          if (!pendingSession) throw error;
+
+          await pendingSession.remove();
+          const retryResult = await startSSOFlow({ strategy, redirectUrl });
+          await completeSSOFlow(retryResult);
+        }
+      } catch (error: unknown) {
+        if (!isCancelledClerkFlow(error)) {
           Alert.alert(
             'Sign-in failed',
-            `${err?.message ?? 'Unknown error'}\n\ncode: ${err?.code ?? 'none'}`
+            isAlreadySignedInError(error)
+              ? 'Your account is already connected. Close and reopen the app to continue.'
+              : getClerkErrorMessage(error, 'We could not sign you in. Please try again.')
           );
         }
       } finally {
         setPendingStrategy(null);
       }
     },
-    [pendingStrategy, startSSOFlow]
+    [
+      authReady,
+      completeSSOFlow,
+      isSessionListLoaded,
+      pendingStrategy,
+      resumeExistingSession,
+      sessions,
+      startSSOFlow,
+    ]
   );
 
   return (
@@ -95,7 +176,7 @@ const BottomLoginSheet = () => {
 
       <TouchableOpacity
         style={[defaultStyles.btn, styles.btnLight]}
-        disabled={!!pendingStrategy}
+        disabled={!!pendingStrategy || !authReady}
         onPress={() => onSSO('oauth_apple')}
         accessibilityLabel="Continue with Apple"
         accessibilityRole="button">
@@ -111,7 +192,7 @@ const BottomLoginSheet = () => {
 
       <TouchableOpacity
         style={[defaultStyles.btn, styles.btnTransparent]}
-        disabled={!!pendingStrategy}
+        disabled={!!pendingStrategy || !authReady}
         onPress={() => onSSO('oauth_google')}
         accessibilityLabel="Continue with Google"
         accessibilityRole="button">
@@ -129,7 +210,7 @@ const BottomLoginSheet = () => {
 
       <Link href={{ pathname: '/login', params: { type: 'register' } }} style={[defaultStyles.btn, styles.btnTransparent]} asChild>
         <TouchableOpacity
-          disabled={!!pendingStrategy}
+          disabled={!!pendingStrategy || !authReady}
           accessibilityLabel="Sign up with email"
           accessibilityRole="button">
           <Ionicons name="mail" size={16} style={styles.btnIcon} color="#fff" />
@@ -139,7 +220,7 @@ const BottomLoginSheet = () => {
 
       <Link href={{ pathname: '/login', params: { type: 'login' } }} asChild>
         <TouchableOpacity
-          disabled={!!pendingStrategy}
+          disabled={!!pendingStrategy || !authReady}
           style={styles.loginRow}
           accessibilityLabel="Log in with existing account"
           accessibilityRole="link">

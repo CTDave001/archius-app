@@ -3,8 +3,8 @@ import DragHandle from '@/components/DragHandle';
 import Colors from '@/constants/Colors';
 import { defaultStyles } from '@/constants/Styles';
 import { resolveApiBaseUrl } from '@/utils/apiUrl';
-import { useSignIn, useSignUp } from '@clerk/clerk-expo';
-import { useLocalSearchParams } from 'expo-router';
+import { useAuth, useSignIn, useSignUp } from '@clerk/clerk-expo';
+import { Redirect, useLocalSearchParams } from 'expo-router';
 import { useState } from 'react';
 import {
   ActivityIndicator,
@@ -28,6 +28,7 @@ const REVIEW_DEMO_EMAIL = 'appreview@archius.app';
 
 const Login = () => {
   const { type } = useLocalSearchParams<{ type: string }>();
+  const { isLoaded: isAuthLoaded, isSignedIn } = useAuth();
   const { signIn, setActive, isLoaded } = useSignIn();
   const { signUp, isLoaded: signUpLoaded, setActive: signupSetActive } = useSignUp();
 
@@ -210,6 +211,9 @@ const Login = () => {
     setCode('');
     setErrorMsg(null);
   };
+
+  if (!isAuthLoaded) return null;
+  if (isSignedIn) return <Redirect href="/(auth)/(drawer)/(chat)/new" />;
 
   return (
     <KeyboardAvoidingView
