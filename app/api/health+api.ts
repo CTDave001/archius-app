@@ -33,6 +33,34 @@ type CheckResult = {
 
 const withTimeout = (ms: number) => AbortSignal.timeout(ms);
 
+// Presence alone is not enough for Clerk: a development secret is a valid
+// non-empty value, but it cannot verify tokens issued by the production
+// publishable key. Ask Clerk which instance the deployed secret belongs to.
+async function checkClerkInstance(key: string): Promise<CheckResult> {
+  const name = 'clerk_production_instance';
+  try {
+    const res = await fetch('https://api.clerk.com/v1/instance', {
+      headers: { Authorization: `Bearer ${key}`, accept: 'application/json' },
+      signal: withTimeout(8_000),
+    });
+    if (!res.ok) {
+      return { name, ok: false, critical: true, detail: `instance HTTP ${res.status}` };
+    }
+    const data: any = await res.json();
+    if (data?.environment_type !== 'production') {
+      return {
+        name,
+        ok: false,
+        critical: true,
+        detail: `expected production, received ${data?.environment_type ?? 'unknown'}`,
+      };
+    }
+    return { name, ok: true, critical: true, detail: 'production instance confirmed' };
+  } catch (e: any) {
+    return { name, ok: false, critical: true, detail: `unreachable: ${e?.message ?? e}` };
+  }
+}
+
 // GET /v1/models on DeepSeek and confirm BOTH configured ids still exist. This
 // is the check that would have caught the rename, and it's free (no tokens).
 async function checkDeepSeekModels(key: string): Promise<CheckResult> {
@@ -151,11 +179,20 @@ export async function GET(req: Request) {
 
   const deepseekKey = env('DEEPSEEK_API_KEY');
   const geminiKey = env('GEMINI_API_KEY');
+  const clerkKey = env('CLERK_SECRET_KEY');
 
   const checks: CheckResult[] = [...checkEnvPresence()];
 
   // Run the live provider checks in parallel; each is individually bounded.
   const live = await Promise.all([
+    clerkKey
+      ? checkClerkInstance(clerkKey)
+      : Promise.resolve<CheckResult>({
+          name: 'clerk_production_instance',
+          ok: false,
+          critical: true,
+          detail: 'CLERK_SECRET_KEY missing',
+        }),
     deepseekKey
       ? checkDeepSeekModels(deepseekKey)
       : Promise.resolve<CheckResult>({
