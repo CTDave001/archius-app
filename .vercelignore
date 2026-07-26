@@ -1,0 +1,4 @@
+# Never upload developer credentials into Vercel's build context.
+.env
+.env.*
+!.env.example
