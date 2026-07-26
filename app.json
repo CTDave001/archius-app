@@ -3,7 +3,7 @@
     "name": "Archius",
     "slug": "archius",
     "scheme": "archius",
-    "version": "1.0.2",
+    "version": "1.0.3",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
     "splash": {
