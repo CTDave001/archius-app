@@ -52,7 +52,7 @@ export const RevenueCatProvider = ({ children }: { children: React.ReactNode }) 
   const [packages, setPackages] = useState<PurchasesPackage[]>([]);
   const [isReady, setIsReady] = useState(false);
   const [isConfigured, setIsConfigured] = useState(false);
-  const { userId: clerkUserId } = useAuth();
+  const { userId: clerkUserId } = useAuth({ treatPendingAsSignedOut: false });
   const { user } = useUser();
   const listenerRef = useRef<((info: CustomerInfo) => void) | null>(null);
 

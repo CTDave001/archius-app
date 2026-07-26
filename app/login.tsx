@@ -28,7 +28,9 @@ const REVIEW_DEMO_EMAIL = 'appreview@archius.app';
 
 const Login = () => {
   const { type } = useLocalSearchParams<{ type: string }>();
-  const { isLoaded: isAuthLoaded, isSignedIn } = useAuth();
+  const { isLoaded: isAuthLoaded, isSignedIn } = useAuth({
+    treatPendingAsSignedOut: false,
+  });
   const { signIn, setActive, isLoaded } = useSignIn();
   const { signUp, isLoaded: signUpLoaded, setActive: signupSetActive } = useSignUp();
 

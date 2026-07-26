@@ -34,7 +34,7 @@ const APPLE_SUBSCRIPTIONS_URL = 'https://apps.apple.com/account/subscriptions';
 const GOOGLE_SUBSCRIPTIONS_URL = 'https://play.google.com/store/account/subscriptions';
 
 const Settings = () => {
-  const { signOut, getToken, userId } = useAuth();
+  const { signOut, getToken, userId } = useAuth({ treatPendingAsSignedOut: false });
   const { user } = useUser();
   const { isPro, restorePermissions } = useRevenueCat();
   const db = useSQLiteContext();

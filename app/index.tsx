@@ -6,7 +6,7 @@ import { Redirect } from 'expo-router';
 import { View, StyleSheet } from 'react-native';
 
 const Page = () => {
-  const { isLoaded, isSignedIn } = useAuth();
+  const { isLoaded, isSignedIn } = useAuth({ treatPendingAsSignedOut: false });
 
   if (!isLoaded) return null;
   if (isSignedIn) return <Redirect href="/(auth)/(drawer)/(chat)/new" />;

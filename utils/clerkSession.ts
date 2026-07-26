@@ -11,6 +11,16 @@ type ClerkErrorLike = {
   errors?: unknown;
 };
 
+type ClerkClientLike = {
+  removeSessions: () => Promise<unknown>;
+  clearCache: () => void;
+};
+
+type ClerkLike = {
+  signOut: () => Promise<void>;
+  client?: ClerkClientLike;
+};
+
 const dateValue = (value: ClerkSessionLike['lastActiveAt']): number => {
   if (value instanceof Date) return value.getTime();
   if (typeof value === 'number') return value;
@@ -30,13 +40,6 @@ export const findMostRecentActiveSession = <T extends ClerkSessionLike>(
       if (!latest) return session;
       return dateValue(session.lastActiveAt) > dateValue(latest.lastActiveAt) ? session : latest;
     }, undefined);
-
-export const findOnlyPendingSession = <T extends ClerkSessionLike>(
-  sessions: readonly T[] | undefined
-): T | undefined => {
-  if (sessions?.length !== 1 || sessions[0].status !== 'pending') return undefined;
-  return sessions[0];
-};
 
 const errorParts = (error: unknown): ClerkErrorLike[] => {
   if (!error || typeof error !== 'object') return [];
@@ -89,4 +92,28 @@ export const getClerkErrorMessage = (error: unknown, fallback: string): string =
   }
 
   return fallback;
+};
+
+/**
+ * Clears both Clerk's active-session state and any sessions retained on the
+ * client resource. The second operation is intentional: a stale native cache
+ * can report "signed out" to React while the Clerk client still owns a session,
+ * causing every new sign-in attempt to fail with "You're already signed in."
+ */
+export const clearClerkClientSessions = async (clerk: ClerkLike): Promise<void> => {
+  let signOutError: unknown;
+
+  try {
+    await clerk.signOut();
+  } catch (error) {
+    signOutError = error;
+  }
+
+  if (clerk.client) {
+    await clerk.client.removeSessions();
+    clerk.client.clearCache();
+    return;
+  }
+
+  if (signOutError) throw signOutError;
 };

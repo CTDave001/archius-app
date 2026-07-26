@@ -1,6 +1,6 @@
 import { ArchiusSplash } from '@/components/ArchiusSplash';
 import { ClerkProvider, useAuth } from '@clerk/clerk-expo';
-import { resourceCache, tokenCache } from '@/utils/clerkStorage';
+import { tokenCache } from '@/utils/clerkStorage';
 import Colors from '@/constants/Colors';
 import { StatusBar } from 'expo-status-bar';
 import {
@@ -31,7 +31,7 @@ const CLERK_PUBLISHABLE_KEY = process.env.EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY;
 SplashScreen.preventAutoHideAsync().catch(() => undefined);
 
 const InitialLayout = ({ onReady }: { onReady: () => void }) => {
-  const { isLoaded, isSignedIn } = useAuth();
+  const { isLoaded, isSignedIn } = useAuth({ treatPendingAsSignedOut: false });
   const segments = useSegments();
   const router = useRouter();
 
@@ -237,12 +237,10 @@ const RootLayoutNav = () => {
   }
 
   return (
-    // Both caches are backed by utils/clerkStorage — see the note there on why
-    // the old token cache could lose the session without anything noticing.
-    <ClerkProvider
-      publishableKey={CLERK_PUBLISHABLE_KEY}
-      tokenCache={tokenCache}
-      __experimental_resourceCache={resourceCache}>
+    // Persist only Clerk's supported token cache. The experimental resource
+    // cache can restore an out-of-date client snapshot that disagrees with
+    // the server about whether a single-session user is already signed in.
+    <ClerkProvider publishableKey={CLERK_PUBLISHABLE_KEY} tokenCache={tokenCache}>
       <GestureHandlerRootView style={{ flex: 1, backgroundColor: Colors.cream }}>
         <StatusBar style="dark" />
         <InitialLayout onReady={() => setClerkReady(true)} />

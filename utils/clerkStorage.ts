@@ -20,9 +20,6 @@
 //     (if modest) downgrade, taken deliberately: the alternative on such a
 //     device is being logged out on every single launch.
 //
-// Both of Clerk's caches are built on this, so the token and the cached
-// client/session snapshot always agree about where they live.
-
 import * as SecureStore from 'expo-secure-store';
 
 import { storage as fallbackStore } from '@/utils/Storage';
@@ -95,10 +92,3 @@ export const tokenCache = {
     void remove(key);
   },
 };
-
-/**
- * Clerk resource cache: snapshots the client, environment, and session JWT to
- * disk, so a cold start restores from local state rather than depending on a
- * clean network round-trip before the user counts as signed in.
- */
-export const resourceCache = () => ({ get, set });

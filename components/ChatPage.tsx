@@ -271,7 +271,7 @@ const ChatPage = () => {
   const db = useSQLiteContext();
   const { id } = useLocalSearchParams<{ id?: string }>();
   const router = useRouter();
-  const { getToken, signOut } = useAuth();
+  const { getToken, signOut } = useAuth({ treatPendingAsSignedOut: false });
   const { user } = useUser();
   // Unified Pro signal (RevenueCat entitlement OR Clerk publicMetadata.isPro)
   // — see RevenueCatProvider. Same source of truth the server enforces.

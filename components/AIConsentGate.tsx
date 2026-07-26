@@ -46,7 +46,7 @@ const disclosures: Disclosure[] = [
 ];
 
 export const AIConsentGate = ({ children }: { children: React.ReactNode }) => {
-  const { userId, signOut } = useAuth();
+  const { userId, signOut } = useAuth({ treatPendingAsSignedOut: false });
   const [accepted, setAccepted] = useState(() => hasAIConsent(userId));
   const { top, bottom } = useSafeAreaInsets();
 

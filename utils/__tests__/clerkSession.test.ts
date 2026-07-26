@@ -1,6 +1,6 @@
 import {
+  clearClerkClientSessions,
   findMostRecentActiveSession,
-  findOnlyPendingSession,
   getClerkErrorMessage,
   isAlreadySignedInError,
   isCancelledClerkFlow,
@@ -17,18 +17,6 @@ describe('Clerk session recovery helpers', () => {
 
     expect(findMostRecentActiveSession(sessions)?.id).toBe('newer');
     expect(sessions.map((session) => session.id)).toEqual(['pending', 'older', 'newer']);
-  });
-
-  it('only returns a pending session when it is the sole local session', () => {
-    expect(findOnlyPendingSession([{ id: 'pending', status: 'pending' }])?.id).toBe(
-      'pending'
-    );
-    expect(
-      findOnlyPendingSession([
-        { id: 'pending', status: 'pending' },
-        { id: 'active', status: 'active' },
-      ])
-    ).toBeUndefined();
   });
 
   it('recognizes duplicate sign-in errors at the top level and inside Clerk errors', () => {
@@ -53,5 +41,26 @@ describe('Clerk session recovery helpers', () => {
 
     expect(getClerkErrorMessage(error, 'Try again.')).toBe('No account was found.');
     expect(isCancelledClerkFlow({ errors: [{ code: 'cancelled' }] })).toBe(true);
+  });
+
+  it('clears all client sessions even when the active sign-out state is stale', async () => {
+    const events: string[] = [];
+    const clerk = {
+      signOut: async () => {
+        events.push('signOut');
+        throw new Error('No active React session');
+      },
+      client: {
+        removeSessions: async () => {
+          events.push('removeSessions');
+        },
+        clearCache: () => {
+          events.push('clearCache');
+        },
+      },
+    };
+
+    await expect(clearClerkClientSessions(clerk)).resolves.toBeUndefined();
+    expect(events).toEqual(['signOut', 'removeSessions', 'clearCache']);
   });
 });

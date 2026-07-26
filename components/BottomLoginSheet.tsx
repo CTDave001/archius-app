@@ -1,13 +1,13 @@
 import Colors from '@/constants/Colors';
 import { defaultStyles } from '@/constants/Styles';
 import {
+  clearClerkClientSessions,
   findMostRecentActiveSession,
-  findOnlyPendingSession,
   getClerkErrorMessage,
   isAlreadySignedInError,
   isCancelledClerkFlow,
 } from '@/utils/clerkSession';
-import { useAuth, useSessionList, useSSO } from '@clerk/clerk-expo';
+import { useAuth, useClerk, useSessionList, useSSO } from '@clerk/clerk-expo';
 import { Ionicons } from '@expo/vector-icons';
 import * as Linking from 'expo-linking';
 import { Link, useRouter } from 'expo-router';
@@ -23,7 +23,10 @@ type Strategy = 'oauth_apple' | 'oauth_google';
 const BottomLoginSheet = () => {
   const { bottom } = useSafeAreaInsets();
   const router = useRouter();
-  const { isLoaded: isAuthLoaded, isSignedIn } = useAuth();
+  const clerk = useClerk();
+  const { isLoaded: isAuthLoaded, isSignedIn } = useAuth({
+    treatPendingAsSignedOut: false,
+  });
   const {
     isLoaded: isSessionListLoaded,
     sessions,
@@ -125,15 +128,10 @@ const BottomLoginSheet = () => {
           if (!isAlreadySignedInError(error)) throw error;
           if (await resumeExistingSession()) return;
 
-          // An interrupted Clerk task can leave one pending local session.
-          // Clear only that unambiguous stale state, then retry the requested
-          // provider once. Never remove sessions from a multi-session device.
-          const pendingSession = findOnlyPendingSession(
-            isSessionListLoaded ? sessions : undefined
-          );
-          if (!pendingSession) throw error;
-
-          await pendingSession.remove();
+          // React can occasionally restore a signed-out snapshot while the
+          // native Clerk client still owns a session. Clear both layers before
+          // retrying once with a fresh SignIn resource.
+          await clearClerkClientSessions(clerk);
           const retryResult = await startSSOFlow({ strategy, redirectUrl });
           await completeSSOFlow(retryResult);
         }
@@ -142,7 +140,7 @@ const BottomLoginSheet = () => {
           Alert.alert(
             'Sign-in failed',
             isAlreadySignedInError(error)
-              ? 'Your account is already connected. Close and reopen the app to continue.'
+              ? 'We could not refresh your saved sign-in. Please try once more.'
               : getClerkErrorMessage(error, 'We could not sign you in. Please try again.')
           );
         }
@@ -152,11 +150,10 @@ const BottomLoginSheet = () => {
     },
     [
       authReady,
+      clerk,
       completeSSOFlow,
-      isSessionListLoaded,
       pendingStrategy,
       resumeExistingSession,
-      sessions,
       startSSOFlow,
     ]
   );

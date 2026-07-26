@@ -19,7 +19,7 @@ import { RevenueCatProvider } from '@/providers/RevenueCat';
 // finishes — otherwise the drawer's first getChats runs against unclaimed
 // (NULL user_id) rows and the chat list flashes empty after an update.
 const ScopeDbToUser = ({ children }: { children: React.ReactNode }) => {
-  const { userId } = useAuth();
+  const { userId } = useAuth({ treatPendingAsSignedOut: false });
   const db = useSQLiteContext();
   const [readyUserId, setReadyUserId] = React.useState<string | null>(null);
 
