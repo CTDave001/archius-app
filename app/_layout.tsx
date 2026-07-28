@@ -1,6 +1,6 @@
 import { ArchiusSplash } from '@/components/ArchiusSplash';
 import { ClerkProvider, useAuth } from '@clerk/clerk-expo';
-import { tokenCache } from '@/utils/clerkStorage';
+import { tokenCache } from '@clerk/clerk-expo/token-cache';
 import Colors from '@/constants/Colors';
 import { StatusBar } from 'expo-status-bar';
 import {
@@ -237,9 +237,9 @@ const RootLayoutNav = () => {
   }
 
   return (
-    // Persist only Clerk's supported token cache. The experimental resource
-    // cache can restore an out-of-date client snapshot that disagrees with
-    // the server about whether a single-session user is already signed in.
+    // Clerk's supported SecureStore-backed cache persists the native client
+    // token across force-closes. Without it, Clerk falls back to memory and a
+    // cold launch looks like a signed-out device.
     <ClerkProvider publishableKey={CLERK_PUBLISHABLE_KEY} tokenCache={tokenCache}>
       <GestureHandlerRootView style={{ flex: 1, backgroundColor: Colors.cream }}>
         <StatusBar style="dark" />
