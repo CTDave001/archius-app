@@ -1,5 +1,6 @@
-import Colors from '@/constants/Colors';
+import type { AppColors } from '@/constants/Colors';
 import { defaultStyles } from '@/constants/Styles';
+import { useThemeColors } from '@/providers/Theme';
 import {
   clearClerkClientSessions,
   findMostRecentActiveSession,
@@ -12,7 +13,7 @@ import { Ionicons } from '@expo/vector-icons';
 import * as Linking from 'expo-linking';
 import { Link, useRouter } from 'expo-router';
 import * as WebBrowser from 'expo-web-browser';
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { ActivityIndicator, Alert, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
@@ -21,6 +22,8 @@ WebBrowser.maybeCompleteAuthSession();
 type Strategy = 'oauth_apple' | 'oauth_google';
 
 const BottomLoginSheet = () => {
+  const Colors = useThemeColors();
+  const styles = useMemo(() => createStyles(Colors), [Colors]);
   const { bottom } = useSafeAreaInsets();
   const router = useRouter();
   const clerk = useClerk();
@@ -178,10 +181,10 @@ const BottomLoginSheet = () => {
         accessibilityLabel="Continue with Apple"
         accessibilityRole="button">
         {pendingStrategy === 'oauth_apple' ? (
-          <ActivityIndicator color={Colors.ink} />
+          <ActivityIndicator color={Colors.onBrandPanelButton} />
         ) : (
           <>
-            <Ionicons name="logo-apple" size={16} style={styles.btnIcon} color={Colors.ink} />
+            <Ionicons name="logo-apple" size={16} style={styles.btnIcon} color={Colors.onBrandPanelButton} />
             <Text style={styles.btnLightText}>Continue with Apple</Text>
           </>
         )}
@@ -228,12 +231,12 @@ const BottomLoginSheet = () => {
   );
 };
 
-const styles = StyleSheet.create({
+const createStyles = (Colors: AppColors) => StyleSheet.create({
   container: {
     position: 'absolute',
     bottom: 0,
     width: '100%',
-    backgroundColor: Colors.ink,
+    backgroundColor: Colors.brandPanel,
     borderTopLeftRadius: 24,
     borderTopRightRadius: 24,
     padding: 24,
@@ -242,7 +245,7 @@ const styles = StyleSheet.create({
   consent: {
     fontFamily: 'Inter_400Regular',
     fontSize: 12,
-    color: Colors.creamSoft,
+    color: Colors.onBrandPanelMuted,
     opacity: 0.85,
     lineHeight: 18,
     marginBottom: 8,
@@ -251,8 +254,8 @@ const styles = StyleSheet.create({
     color: Colors.blueprintLifted,
     textDecorationLine: 'underline',
   },
-  btnLight: { backgroundColor: Colors.cream },
-  btnLightText: { fontFamily: 'Inter_500Medium', color: Colors.ink, fontSize: 16 },
+  btnLight: { backgroundColor: Colors.brandPanelButton },
+  btnLightText: { fontFamily: 'Inter_500Medium', color: Colors.onBrandPanelButton, fontSize: 16 },
   btnTransparent: { backgroundColor: 'transparent', borderWidth: 1, borderColor: 'rgba(255,255,255,0.25)' },
   btnDarkText: { fontFamily: 'Inter_500Medium', color: '#fff', fontSize: 16 },
   btnIcon: { paddingRight: 8 },

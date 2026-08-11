@@ -3,13 +3,18 @@
     "name": "Archius",
     "slug": "archius",
     "scheme": "archius",
-    "version": "1.0.3",
+    "version": "1.0.4",
     "icon": "./assets/icon.png",
-    "userInterfaceStyle": "light",
+    "userInterfaceStyle": "automatic",
     "splash": {
       "image": "./assets/foreground.png",
       "resizeMode": "contain",
-      "backgroundColor": "#FAF8F3"
+      "backgroundColor": "#FAF8F3",
+      "dark": {
+        "image": "./assets/monochrome.png",
+        "resizeMode": "contain",
+        "backgroundColor": "#0E161A"
+      }
     },
     "assetBundlePatterns": [
       "**/*"

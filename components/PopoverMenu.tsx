@@ -1,4 +1,5 @@
-import Colors from '@/constants/Colors';
+import type { AppColors } from '@/constants/Colors';
+import { useThemeColors } from '@/providers/Theme';
 import { tap } from '@/utils/haptics';
 import { Ionicons } from '@expo/vector-icons';
 import {
@@ -10,6 +11,7 @@ import {
   Text,
   View,
 } from 'react-native';
+import { useMemo } from 'react';
 
 export type PopoverAnchor = { x: number; y: number; width: number; height: number };
 
@@ -41,6 +43,8 @@ type Props = {
 // full-screen ActionSheet. Positions a card near the trigger, flipping
 // above the anchor if there's no room below, and clamps to screen edges.
 export const PopoverMenu = ({ visible, anchor, items, onClose }: Props) => {
+  const Colors = useThemeColors();
+  const styles = useMemo(() => createStyles(Colors), [Colors]);
   if (!anchor) return null;
 
   const screen = Dimensions.get('window');
@@ -135,7 +139,7 @@ export const PopoverMenu = ({ visible, anchor, items, onClose }: Props) => {
   );
 };
 
-const styles = StyleSheet.create({
+const createStyles = (Colors: AppColors) => StyleSheet.create({
   backdrop: {
     flex: 1,
     // Transparent — the menu itself is the only visible element. Tapping
@@ -144,12 +148,12 @@ const styles = StyleSheet.create({
   },
   card: {
     position: 'absolute',
-    backgroundColor: Colors.cream,
+    backgroundColor: Colors.surfaceElevated,
     borderRadius: 14,
     borderWidth: StyleSheet.hairlineWidth,
     borderColor: Colors.stone,
     paddingVertical: 4,
-    shadowColor: Colors.ink,
+    shadowColor: Colors.shadow,
     shadowOffset: { width: 0, height: 8 },
     shadowOpacity: 0.18,
     shadowRadius: 24,

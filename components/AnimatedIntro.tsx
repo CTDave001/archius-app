@@ -1,6 +1,7 @@
 import BrandMark from '@/components/BrandMark';
-import Colors from '@/constants/Colors';
-import { useEffect } from 'react';
+import type { AppColors } from '@/constants/Colors';
+import { useThemeColors } from '@/providers/Theme';
+import { useEffect, useMemo } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 import Animated, {
   Easing,
@@ -14,6 +15,8 @@ import Animated, {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 const AnimatedIntro = () => {
+  const Colors = useThemeColors();
+  const styles = useMemo(() => createStyles(Colors), [Colors]);
   const { top } = useSafeAreaInsets();
   // Entrance opacities + translations
   const markOpacity = useSharedValue(0);
@@ -82,7 +85,7 @@ const AnimatedIntro = () => {
   );
 };
 
-const styles = StyleSheet.create({
+const createStyles = (Colors: AppColors) => StyleSheet.create({
   container: {
     flex: 1,
     alignItems: 'center',

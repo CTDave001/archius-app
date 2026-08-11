@@ -1,8 +1,9 @@
-import Colors from '@/constants/Colors';
+import type { AppColors } from '@/constants/Colors';
+import { useAppTheme } from '@/providers/Theme';
 import { lightImpact, mediumImpact, tap } from '@/utils/haptics';
 import { Ionicons } from '@expo/vector-icons';
 import { BlurView } from 'expo-blur';
-import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from 'react';
+import { forwardRef, useEffect, useImperativeHandle, useMemo, useRef, useState } from 'react';
 import { Image, Platform, Pressable, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import Animated, {
   FadeIn,
@@ -57,6 +58,8 @@ const MessageInput = forwardRef<MessageInputHandle, Props>(function MessageInput
   },
   ref
 ) {
+  const { colors: Colors, resolvedTheme } = useAppTheme();
+  const styles = useMemo(() => createStyles(Colors), [Colors]);
   const plusRef = useRef<View>(null);
 
   const openMenu = () => {
@@ -114,7 +117,7 @@ const MessageInput = forwardRef<MessageInputHandle, Props>(function MessageInput
     backgroundColor: interpolateColor(
       progress.value,
       [0, 1, 2],
-      [Colors.stoneDark, Colors.blueprint, Colors.ink]
+      [Colors.stoneDark, Colors.blueprint, Colors.controlPressed]
     ),
     transform: [{ scale: 0.92 + Math.min(progress.value, 1) * 0.08 }],
   }));
@@ -151,7 +154,7 @@ const MessageInput = forwardRef<MessageInputHandle, Props>(function MessageInput
   return (
     <BlurView
       intensity={75}
-      tint="light"
+      tint={resolvedTheme === 'dark' ? 'dark' : 'light'}
       style={[
         styles.blurContainer,
         { paddingBottom: Math.max(bottom, 8), paddingTop: 10 },
@@ -183,7 +186,7 @@ const MessageInput = forwardRef<MessageInputHandle, Props>(function MessageInput
               accessibilityLabel="Remove attached image"
               accessibilityRole="button"
               style={styles.thumbRemove}>
-              <Ionicons name="close" size={13} color="#fff" />
+              <Ionicons name="close" size={13} color={Colors.onControl} />
             </Pressable>
           </View>
         </Animated.View>
@@ -200,7 +203,7 @@ const MessageInput = forwardRef<MessageInputHandle, Props>(function MessageInput
                 menuActive && styles.toggleBtnActive,
                 pressed && styles.toggleBtnPressed,
               ]}>
-              <Ionicons name="add" size={22} color={menuActive ? '#fff' : Colors.slateSoft} />
+              <Ionicons name="add" size={22} color={menuActive ? Colors.onControl : Colors.slateSoft} />
             </Pressable>
           </View>
         )}
@@ -225,7 +228,7 @@ const MessageInput = forwardRef<MessageInputHandle, Props>(function MessageInput
           <Ionicons
             name={isStreaming ? 'stop' : 'arrow-up'}
             size={isStreaming ? 16 : 20}
-            color="#fff"
+            color={Colors.onControl}
           />
         </AnimatedTouchable>
       </View>
@@ -233,13 +236,12 @@ const MessageInput = forwardRef<MessageInputHandle, Props>(function MessageInput
   );
 });
 
-const styles = StyleSheet.create({
+const createStyles = (Colors: AppColors) => StyleSheet.create({
   // BlurView on Android collapses to a near-opaque background — we layer a
   // translucent cream below it so the brand color shows through, both on
   // platforms with real blur (iOS) and platforms without (Android).
   blurContainer: {
-    backgroundColor:
-      Platform.OS === 'android' ? Colors.cream : 'rgba(250, 248, 243, 0.85)',
+    backgroundColor: Platform.OS === 'android' ? Colors.cream : Colors.composerGlass,
     borderTopWidth: StyleSheet.hairlineWidth,
     borderTopColor: Colors.stone,
   },
@@ -272,7 +274,7 @@ const styles = StyleSheet.create({
     width: 22,
     height: 22,
     borderRadius: 11,
-    backgroundColor: Colors.ink,
+    backgroundColor: Colors.control,
     alignItems: 'center',
     justifyContent: 'center',
     borderWidth: 1.5,
@@ -313,7 +315,7 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontFamily: 'Inter_400Regular',
     borderColor: Colors.stone,
-    backgroundColor: '#fff',
+    backgroundColor: Colors.surfaceElevated,
     color: Colors.graphite,
     maxHeight: 160,
     minHeight: 44,

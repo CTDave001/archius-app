@@ -1,4 +1,5 @@
-import Colors from '@/constants/Colors';
+import type { AppColors } from '@/constants/Colors';
+import { useThemeColors } from '@/providers/Theme';
 import { useAuth } from '@clerk/clerk-expo';
 import { Ionicons } from '@expo/vector-icons';
 import { Stack, useRouter } from 'expo-router';
@@ -49,6 +50,8 @@ const ScopeDbToUser = ({ children }: { children: React.ReactNode }) => {
 
 const Layout = () => {
   const router = useRouter();
+  const Colors = useThemeColors();
+  const styles = React.useMemo(() => createStyles(Colors), [Colors]);
 
   return (
     <RevenueCatProvider>
@@ -118,7 +121,7 @@ const Layout = () => {
   );
 };
 
-const styles = StyleSheet.create({
+const createStyles = (Colors: AppColors) => StyleSheet.create({
   // 44pt touch target meeting Apple HIG, with ink color (brand) and a soft
   // tinted background so it reads as an active control rather than a
   // floating glyph on cream.

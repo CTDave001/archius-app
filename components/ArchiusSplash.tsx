@@ -8,8 +8,9 @@
 // reads as a continuation, not a hard cut to a different brand impression.
 
 import BrandMark from '@/components/BrandMark';
-import Colors from '@/constants/Colors';
-import { useEffect } from 'react';
+import type { AppColors } from '@/constants/Colors';
+import { useThemeColors } from '@/providers/Theme';
+import { useEffect, useMemo } from 'react';
 import { StyleSheet } from 'react-native';
 import Animated, {
   useSharedValue,
@@ -32,6 +33,8 @@ export interface ArchiusSplashProps {
 }
 
 export function ArchiusSplash({ onFinish, holdMs = 700 }: ArchiusSplashProps) {
+  const Colors = useThemeColors();
+  const styles = useMemo(() => createStyles(Colors), [Colors]);
   const markOpacity = useSharedValue(0);
   const markScale = useSharedValue(0.86);
   const wordmarkOpacity = useSharedValue(0);
@@ -98,7 +101,7 @@ export function ArchiusSplash({ onFinish, holdMs = 700 }: ArchiusSplashProps) {
   );
 }
 
-const styles = StyleSheet.create({
+const createStyles = (Colors: AppColors) => StyleSheet.create({
   overlay: {
     backgroundColor: Colors.cream,
     alignItems: 'center',

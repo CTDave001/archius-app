@@ -36,6 +36,25 @@ const tokens = {
   inkScrim50: 'rgba(31, 68, 88, 0.50)',
   rustTint12: 'rgba(194, 91, 91, 0.12)',
   rustTint45: 'rgba(194, 91, 91, 0.45)',
+
+  // Semantic surfaces and controls. These deliberately coexist with the
+  // original handoff names above so older call sites keep the exact light
+  // appearance while theme-aware screens can express intent clearly.
+  surface: '#FFFFFF',
+  surfaceElevated: '#FFFFFF',
+  control: '#1F4458',
+  controlPressed: '#122A39',
+  onControl: '#FFFFFF',
+  userBubble: '#F4F1EA',
+  onUserBubble: '#1A1D21',
+  composerGlass: 'rgba(250, 248, 243, 0.88)',
+  codeSurface: '#282C34',
+  shadow: '#122A39',
+  brandPanel: '#1F4458',
+  onBrandPanel: '#FFFFFF',
+  onBrandPanelMuted: '#F4F1EA',
+  brandPanelButton: '#FAF8F3',
+  onBrandPanelButton: '#1F4458',
 };
 
 // Back-compat aliases for legacy component usage.
@@ -54,3 +73,4 @@ const Colors = {
 
 export default Colors;
 export { tokens };
+export type AppColors = typeof Colors;

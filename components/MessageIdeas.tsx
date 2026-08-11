@@ -1,5 +1,7 @@
-import Colors from '@/constants/Colors';
+import type { AppColors } from '@/constants/Colors';
+import { useThemeColors } from '@/providers/Theme';
 import { tap } from '@/utils/haptics';
+import { useMemo } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 
 const PredefinedMessages = [
@@ -19,6 +21,8 @@ type Props = {
 };
 
 const MessageIdeas = ({ onUseIdea }: Props) => {
+  const Colors = useThemeColors();
+  const styles = useMemo(() => createStyles(Colors), [Colors]);
   return (
     <View>
       <ScrollView
@@ -47,7 +51,7 @@ const MessageIdeas = ({ onUseIdea }: Props) => {
   );
 };
 
-const styles = StyleSheet.create({
+const createStyles = (Colors: AppColors) => StyleSheet.create({
   scroll: { paddingHorizontal: 16, paddingVertical: 10, gap: 10 },
   card: {
     backgroundColor: Colors.creamSoft,

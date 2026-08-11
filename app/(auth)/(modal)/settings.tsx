@@ -1,7 +1,9 @@
 import DragHandle from '@/components/DragHandle';
-import Colors from '@/constants/Colors';
+import type { AppColors } from '@/constants/Colors';
+import type { ThemeMode } from '@/constants/Themes';
 import { defaultStyles } from '@/constants/Styles';
 import { useRevenueCat } from '@/providers/RevenueCat';
+import { useAppTheme } from '@/providers/Theme';
 import { FREE_DAILY_MESSAGE_LIMIT, PRO_DAILY_FLASH_LIMIT } from '@/utils/ai';
 import { resolveApiBaseUrl } from '@/utils/apiUrl';
 import { deleteUserChats } from '@/utils/Database';
@@ -12,7 +14,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { Link } from 'expo-router';
 import { useSQLiteContext } from 'expo-sqlite';
 import * as WebBrowser from 'expo-web-browser';
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import {
   Alert,
   Linking,
@@ -34,6 +36,8 @@ const APPLE_SUBSCRIPTIONS_URL = 'https://apps.apple.com/account/subscriptions';
 const GOOGLE_SUBSCRIPTIONS_URL = 'https://play.google.com/store/account/subscriptions';
 
 const Settings = () => {
+  const { colors: Colors, mode, setMode } = useAppTheme();
+  const styles = useMemo(() => createStyles(Colors), [Colors]);
   const { signOut, getToken, userId } = useAuth({ treatPendingAsSignedOut: false });
   const { user } = useUser();
   const { isPro, restorePermissions } = useRevenueCat();
@@ -139,7 +143,7 @@ const Settings = () => {
 
   return (
     <ScrollView
-      style={defaultStyles.pageContainer}
+      style={[defaultStyles.pageContainer, { backgroundColor: Colors.cream }]}
       contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 40, paddingTop: 0 }}
       contentInsetAdjustmentBehavior="automatic">
       <DragHandle />
@@ -277,6 +281,49 @@ const Settings = () => {
       {/* Preferences */}
       <SectionHeader title="Preferences" />
       <Card>
+        <View style={styles.appearanceRow}>
+          <View style={styles.preferenceHeader}>
+            <View style={styles.iconSquare}>
+              <Ionicons
+                name={mode === 'dark' ? 'moon' : mode === 'light' ? 'sunny' : 'contrast'}
+                size={20}
+                color={Colors.blueprint}
+              />
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.rowTitle}>Appearance</Text>
+              <Text style={styles.rowSubtitle}>Choose how Archius looks on this device</Text>
+            </View>
+          </View>
+          <View style={styles.themeSegment} accessibilityRole="radiogroup">
+            {(
+              [
+                ['system', 'System'],
+                ['light', 'Light'],
+                ['dark', 'Dark'],
+              ] as const satisfies readonly (readonly [ThemeMode, string])[]
+            ).map(([value, label]) => {
+              const selected = mode === value;
+              return (
+                <Pressable
+                  key={value}
+                  accessibilityRole="radio"
+                  accessibilityState={{ selected }}
+                  onPress={() => setMode(value)}
+                  style={({ pressed }) => [
+                    styles.themeOption,
+                    selected && styles.themeOptionSelected,
+                    pressed && !selected && styles.themeOptionPressed,
+                  ]}>
+                  <Text style={[styles.themeOptionText, selected && styles.themeOptionTextSelected]}>
+                    {label}
+                  </Text>
+                </Pressable>
+              );
+            })}
+          </View>
+        </View>
+        <Divider />
         <View style={[styles.row, { paddingVertical: 12 }]}>
           <View style={styles.iconSquare}>
             <Ionicons name="pulse-outline" size={20} color={Colors.blueprint} />
@@ -320,15 +367,23 @@ const Settings = () => {
   );
 };
 
-const SectionHeader = ({ title }: { title: string }) => (
-  <Text style={styles.sectionHeader}>{title}</Text>
-);
+const SectionHeader = ({ title }: { title: string }) => {
+  const { colors } = useAppTheme();
+  const styles = useMemo(() => createStyles(colors), [colors]);
+  return <Text style={styles.sectionHeader}>{title}</Text>;
+};
 
-const Card = ({ children }: { children: React.ReactNode }) => (
-  <View style={styles.card}>{children}</View>
-);
+const Card = ({ children }: { children: React.ReactNode }) => {
+  const { colors } = useAppTheme();
+  const styles = useMemo(() => createStyles(colors), [colors]);
+  return <View style={styles.card}>{children}</View>;
+};
 
-const Divider = () => <View style={styles.divider} />;
+const Divider = () => {
+  const { colors } = useAppTheme();
+  const styles = useMemo(() => createStyles(colors), [colors]);
+  return <View style={styles.divider} />;
+};
 
 const InfoRow = ({
   icon,
@@ -340,19 +395,23 @@ const InfoRow = ({
   iconTint?: string;
   label: string;
   value: string;
-}) => (
-  <View style={styles.row}>
-    <View style={[styles.iconSquare, iconTint ? { backgroundColor: iconTint + '22' } : null]}>
-      <Ionicons name={icon} size={20} color={iconTint || Colors.blueprint} />
+}) => {
+  const { colors: Colors } = useAppTheme();
+  const styles = useMemo(() => createStyles(Colors), [Colors]);
+  return (
+    <View style={styles.row}>
+      <View style={[styles.iconSquare, iconTint ? { backgroundColor: iconTint + '22' } : null]}>
+        <Ionicons name={icon} size={20} color={iconTint || Colors.blueprint} />
+      </View>
+      <View style={{ flex: 1 }}>
+        <Text style={styles.rowTitle}>{label}</Text>
+        <Text style={styles.rowSubtitle} numberOfLines={1}>
+          {value}
+        </Text>
+      </View>
     </View>
-    <View style={{ flex: 1 }}>
-      <Text style={styles.rowTitle}>{label}</Text>
-      <Text style={styles.rowSubtitle} numberOfLines={1}>
-        {value}
-      </Text>
-    </View>
-  </View>
-);
+  );
+};
 
 const CardRow = ({
   icon,
@@ -370,28 +429,32 @@ const CardRow = ({
   subtitle?: string;
   onPress?: () => void;
   external?: boolean;
-}) => (
-  <Pressable
-    onPress={onPress}
-    style={({ pressed }) => [styles.row, pressed && styles.rowPressed]}>
-    <View style={[styles.iconSquare, iconTint ? { backgroundColor: iconTint + '22' } : null]}>
-      <Ionicons name={icon} size={20} color={iconTint || Colors.blueprint} />
-    </View>
-    <View style={{ flex: 1 }}>
-      <Text style={[styles.rowTitle, titleTint ? { color: titleTint } : null]}>{title}</Text>
-      {subtitle ? <Text style={styles.rowSubtitle}>{subtitle}</Text> : null}
-    </View>
-    {onPress && (
-      <Ionicons
-        name={external ? 'open-outline' : 'chevron-forward'}
-        size={18}
-        color={Colors.slateSoft}
-      />
-    )}
-  </Pressable>
-);
+}) => {
+  const { colors: Colors } = useAppTheme();
+  const styles = useMemo(() => createStyles(Colors), [Colors]);
+  return (
+    <Pressable
+      onPress={onPress}
+      style={({ pressed }) => [styles.row, pressed && styles.rowPressed]}>
+      <View style={[styles.iconSquare, iconTint ? { backgroundColor: iconTint + '22' } : null]}>
+        <Ionicons name={icon} size={20} color={iconTint || Colors.blueprint} />
+      </View>
+      <View style={{ flex: 1 }}>
+        <Text style={[styles.rowTitle, titleTint ? { color: titleTint } : null]}>{title}</Text>
+        {subtitle ? <Text style={styles.rowSubtitle}>{subtitle}</Text> : null}
+      </View>
+      {onPress && (
+        <Ionicons
+          name={external ? 'open-outline' : 'chevron-forward'}
+          size={18}
+          color={Colors.slateSoft}
+        />
+      )}
+    </Pressable>
+  );
+};
 
-const styles = StyleSheet.create({
+const createStyles = (Colors: AppColors) => StyleSheet.create({
   sectionHeader: {
     fontFamily: 'Inter_600SemiBold',
     fontSize: 13,
@@ -401,7 +464,7 @@ const styles = StyleSheet.create({
     marginLeft: 16,
   },
   card: {
-    backgroundColor: '#fff',
+    backgroundColor: Colors.surface,
     borderRadius: 16,
     borderWidth: 1,
     borderColor: Colors.stone,
@@ -415,6 +478,32 @@ const styles = StyleSheet.create({
     gap: 14,
   },
   rowPressed: { backgroundColor: Colors.creamSoft },
+  appearanceRow: { padding: 14 },
+  preferenceHeader: { flexDirection: 'row', alignItems: 'center', gap: 14 },
+  themeSegment: {
+    flexDirection: 'row',
+    padding: 3,
+    marginTop: 14,
+    borderRadius: 11,
+    backgroundColor: Colors.creamSoft,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: Colors.stone,
+  },
+  themeOption: {
+    flex: 1,
+    minHeight: 34,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: 8,
+  },
+  themeOptionSelected: { backgroundColor: Colors.control },
+  themeOptionPressed: { backgroundColor: Colors.blueprintTint12 },
+  themeOptionText: {
+    fontFamily: 'Inter_500Medium',
+    fontSize: 13,
+    color: Colors.slate,
+  },
+  themeOptionTextSelected: { color: Colors.onControl },
   iconSquare: {
     width: 40,
     height: 40,

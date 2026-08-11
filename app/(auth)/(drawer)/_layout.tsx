@@ -1,7 +1,8 @@
 import BrandMark from '@/components/BrandMark';
 import PopoverMenu, { type PopoverAnchor, type PopoverItem } from '@/components/PopoverMenu';
-import Colors from '@/constants/Colors';
+import type { AppColors } from '@/constants/Colors';
 import { useRevenueCat } from '@/providers/RevenueCat';
+import { useThemeColors } from '@/providers/Theme';
 import { useUser } from '@clerk/clerk-expo';
 import { Ionicons } from '@expo/vector-icons';
 import { tap } from '@/utils/haptics';
@@ -58,6 +59,8 @@ const ChatRow = ({
   onDelete: () => void;
   onOpenMenu: (anchor: PopoverAnchor) => void;
 }) => {
+  const Colors = useThemeColors();
+  const styles = useMemo(() => createStyles(Colors), [Colors]);
   const moreRef = useRef<View>(null);
 
   const openMenu = () => {
@@ -77,7 +80,7 @@ const ChatRow = ({
             styles.swipeDeleteAction,
             pressed && { opacity: 0.85 },
           ]}>
-          <Ionicons name="trash" size={20} color="#fff" />
+          <Ionicons name="trash" size={20} color={Colors.onControl} />
           <Text style={styles.swipeDeleteText}>Delete</Text>
         </Pressable>
       )}
@@ -116,6 +119,8 @@ const ChatRow = ({
 };
 
 export const CustomDrawerContent = (props: any) => {
+  const Colors = useThemeColors();
+  const styles = useMemo(() => createStyles(Colors), [Colors]);
   const { bottom, top } = useSafeAreaInsets();
   const db = useSQLiteContext();
   const isDrawerOpen = useDrawerStatus() === 'open';
@@ -260,7 +265,7 @@ export const CustomDrawerContent = (props: any) => {
   // above the search box). Use a plain View and let the inner ScrollView
   // handle insets.
   return (
-    <View style={{ flex: 1 }}>
+    <View style={{ flex: 1, backgroundColor: Colors.cream }}>
       <View style={{ backgroundColor: Colors.cream, paddingTop: top, paddingBottom: 10 }}>
         <View style={styles.searchSection}>
           <Ionicons style={styles.searchIcon} name="search" size={18} color={Colors.slateSoft} />
@@ -296,7 +301,7 @@ export const CustomDrawerContent = (props: any) => {
             pressed && styles.newChatRowPressed,
           ]}>
           <View style={styles.newChatIcon}>
-            <BrandMark size={16} color="#fff" />
+            <BrandMark size={16} color={Colors.onControl} />
           </View>
           <Text style={styles.newChatLabel}>New chat</Text>
           <Ionicons name="create-outline" size={18} color={Colors.slateSoft} />
@@ -372,7 +377,7 @@ export const CustomDrawerContent = (props: any) => {
                   <Text
                     style={[
                       styles.planBadgeText,
-                      isPro && { color: '#fff' },
+                      isPro && { color: Colors.onControl },
                     ]}>
                     {isPro ? 'PRO' : 'FREE'}
                   </Text>
@@ -460,6 +465,8 @@ export const CustomDrawerContent = (props: any) => {
 
 const Layout = () => {
   const dimensions = useWindowDimensions();
+  const Colors = useThemeColors();
+  const styles = useMemo(() => createStyles(Colors), [Colors]);
 
   return (
     <Drawer
@@ -539,7 +546,7 @@ const Layout = () => {
   );
 };
 
-const styles = StyleSheet.create({
+const createStyles = (Colors: AppColors) => StyleSheet.create({
   searchSection: {
     marginHorizontal: 16,
     borderRadius: 10,
@@ -578,7 +585,7 @@ const styles = StyleSheet.create({
     width: 30,
     height: 30,
     borderRadius: 8,
-    backgroundColor: Colors.ink,
+    backgroundColor: Colors.control,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -640,7 +647,7 @@ const styles = StyleSheet.create({
   },
   swipeDeleteText: {
     fontFamily: 'Inter_600SemiBold',
-    color: '#fff',
+    color: Colors.onControl,
     fontSize: 12,
     marginTop: 4,
   },
@@ -687,11 +694,11 @@ const styles = StyleSheet.create({
   footer: { flexDirection: 'row', alignItems: 'center', gap: 12 },
   avatar: { width: 40, height: 40, borderRadius: 12 },
   avatarFallback: {
-    backgroundColor: Colors.ink,
+    backgroundColor: Colors.control,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  avatarLetter: { fontFamily: 'Inter_600SemiBold', color: '#fff', fontSize: 17 },
+  avatarLetter: { fontFamily: 'Inter_600SemiBold', color: Colors.onControl, fontSize: 17 },
   userBlock: { flex: 1, marginRight: 4 },
   userName: {
     fontFamily: 'Inter_600SemiBold',
@@ -723,12 +730,12 @@ const styles = StyleSheet.create({
   renameCard: {
     width: '100%',
     maxWidth: 360,
-    backgroundColor: Colors.cream,
+    backgroundColor: Colors.surfaceElevated,
     borderRadius: 16,
     padding: 20,
     borderWidth: StyleSheet.hairlineWidth,
     borderColor: Colors.stone,
-    shadowColor: Colors.ink,
+    shadowColor: Colors.shadow,
     shadowOffset: { width: 0, height: 12 },
     shadowOpacity: 0.2,
     shadowRadius: 32,
@@ -749,7 +756,7 @@ const styles = StyleSheet.create({
     fontFamily: 'Inter_400Regular',
     fontSize: 15,
     color: Colors.graphite,
-    backgroundColor: '#fff',
+    backgroundColor: Colors.surface,
     marginBottom: 16,
   },
   renameRow: {
@@ -771,12 +778,12 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingVertical: 10,
     borderRadius: 10,
-    backgroundColor: Colors.ink,
+    backgroundColor: Colors.control,
   },
   renameBtnPrimaryText: {
     fontFamily: 'Inter_600SemiBold',
     fontSize: 14,
-    color: '#fff',
+    color: Colors.onControl,
   },
 });
 

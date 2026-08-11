@@ -1,13 +1,16 @@
-import Colors from '@/constants/Colors';
+import { useThemeColors } from '@/providers/Theme';
 import { StyleSheet, View } from 'react-native';
 
 // iOS-native style drag handle for the top of modal sheets.
 // Place at the top of any screen presented with presentation="modal".
-export const DragHandle = () => (
-  <View style={styles.wrap} pointerEvents="none">
-    <View style={styles.bar} />
-  </View>
-);
+export const DragHandle = () => {
+  const Colors = useThemeColors();
+  return (
+    <View style={styles.wrap} pointerEvents="none">
+      <View style={[styles.bar, { backgroundColor: Colors.stoneDark }]} />
+    </View>
+  );
+};
 
 const styles = StyleSheet.create({
   wrap: {
@@ -19,7 +22,6 @@ const styles = StyleSheet.create({
     width: 40,
     height: 4,
     borderRadius: 2,
-    backgroundColor: Colors.stoneDark,
     opacity: 0.6,
   },
 });

@@ -1,7 +1,8 @@
 import { ArchiusSplash } from '@/components/ArchiusSplash';
 import { ClerkProvider, useAuth } from '@clerk/clerk-expo';
 import { tokenCache } from '@clerk/clerk-expo/token-cache';
-import Colors from '@/constants/Colors';
+import type { AppColors } from '@/constants/Colors';
+import { ThemeProvider, useAppTheme } from '@/providers/Theme';
 import { StatusBar } from 'expo-status-bar';
 import {
   Inter_400Regular,
@@ -31,6 +32,7 @@ const CLERK_PUBLISHABLE_KEY = process.env.EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY;
 SplashScreen.preventAutoHideAsync().catch(() => undefined);
 
 const InitialLayout = ({ onReady }: { onReady: () => void }) => {
+  const { colors } = useAppTheme();
   const { isLoaded, isSignedIn } = useAuth({ treatPendingAsSignedOut: false });
   const segments = useSegments();
   const router = useRouter();
@@ -56,10 +58,10 @@ const InitialLayout = ({ onReady }: { onReady: () => void }) => {
   return (
     <Stack
       screenOptions={{
-        contentStyle: { backgroundColor: Colors.cream },
-        headerStyle: { backgroundColor: Colors.cream },
+        contentStyle: { backgroundColor: colors.cream },
+        headerStyle: { backgroundColor: colors.cream },
         headerShadowVisible: false,
-        headerTintColor: Colors.ink,
+        headerTintColor: colors.ink,
       }}>
       <Stack.Screen name="index" options={{ headerShown: false }} />
       <Stack.Screen
@@ -80,7 +82,7 @@ const InitialLayout = ({ onReady }: { onReady: () => void }) => {
                 alignItems: 'center',
                 justifyContent: 'center',
               }}>
-              <Ionicons name="close" size={22} color={Colors.ink} />
+              <Ionicons name="close" size={22} color={colors.ink} />
             </TouchableOpacity>
           ),
         }}
@@ -90,36 +92,45 @@ const InitialLayout = ({ onReady }: { onReady: () => void }) => {
   );
 };
 
-const MissingClerkKey = () => (
-  <View
-    style={{
-      flex: 1,
-      padding: 24,
-      justifyContent: 'center',
-      backgroundColor: Colors.cream,
-    }}>
-    <Text
+const MissingClerkKey = () => {
+  const { colors } = useAppTheme();
+  return (
+    <View
       style={{
-        fontFamily: 'Inter_600SemiBold',
-        fontSize: 18,
-        marginBottom: 8,
-        color: Colors.graphite,
+        flex: 1,
+        padding: 24,
+        justifyContent: 'center',
+        backgroundColor: colors.cream,
       }}>
-      Missing Clerk publishable key
-    </Text>
-    <Text style={{ fontFamily: 'Inter_400Regular', fontSize: 14, color: Colors.slate, lineHeight: 20 }}>
-      Set EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY in your .env file and restart the dev server. You can
-      get a key by creating a free app at clerk.com.
-    </Text>
-  </View>
-);
+      <Text
+        style={{
+          fontFamily: 'Inter_600SemiBold',
+          fontSize: 18,
+          marginBottom: 8,
+          color: colors.graphite,
+        }}>
+        Missing Clerk publishable key
+      </Text>
+      <Text
+        style={{
+          fontFamily: 'Inter_400Regular',
+          fontSize: 14,
+          color: colors.slate,
+          lineHeight: 20,
+        }}>
+        Set EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY in your .env file and restart the dev server. You can
+        get a key by creating a free app at clerk.com.
+      </Text>
+    </View>
+  );
+};
 
 // Catches render-time errors anywhere in the tree. In release builds an
 // uncaught render error is FATAL (RCTExceptionsManager aborts the process) —
 // App Review rejected build 9 for exactly this crash signature. Showing a
 // recovery screen keeps the app alive and makes the error readable.
 class RootErrorBoundary extends React.Component<
-  { children: React.ReactNode },
+  { children: React.ReactNode; colors: AppColors },
   { error: Error | null }
 > {
   state: { error: Error | null } = { error: null };
@@ -135,6 +146,7 @@ class RootErrorBoundary extends React.Component<
 
   render() {
     if (this.state.error) {
+      const { colors } = this.props;
       const message = __DEV__
         ? this.state.error.message || String(this.state.error)
         : 'Please try again. If the problem continues, close and reopen Archius.';
@@ -142,18 +154,18 @@ class RootErrorBoundary extends React.Component<
         ? (this.state.error.stack || '').split('\n').slice(0, 8).join('\n')
         : '';
       return (
-        <View style={{ flex: 1, backgroundColor: Colors.cream, paddingTop: 80 }}>
+        <View style={{ flex: 1, backgroundColor: colors.cream, paddingTop: 80 }}>
           <ScrollView style={{ paddingHorizontal: 24 }}>
             <Text
               style={{
                 fontSize: 20,
                 fontWeight: '600',
-                color: Colors.ink,
+                color: colors.ink,
                 marginBottom: 12,
               }}>
               Something went wrong
             </Text>
-            <Text selectable style={{ fontSize: 13, color: Colors.graphite, lineHeight: 18 }}>
+            <Text selectable style={{ fontSize: 13, color: colors.graphite, lineHeight: 18 }}>
               {message}
               {stack ? `\n\n${stack}` : ''}
             </Text>
@@ -162,12 +174,12 @@ class RootErrorBoundary extends React.Component<
               accessibilityRole="button"
               style={{
                 marginTop: 24,
-                backgroundColor: Colors.ink,
+                backgroundColor: colors.control,
                 borderRadius: 12,
                 paddingVertical: 14,
                 alignItems: 'center',
               }}>
-              <Text style={{ color: '#fff', fontSize: 16, fontWeight: '600' }}>Try again</Text>
+              <Text style={{ color: colors.onControl, fontSize: 16, fontWeight: '600' }}>Try again</Text>
             </TouchableOpacity>
           </ScrollView>
         </View>
@@ -178,6 +190,7 @@ class RootErrorBoundary extends React.Component<
 }
 
 const RootLayoutNav = () => {
+  const { colors, resolvedTheme } = useAppTheme();
   const [interLoaded] = useInterFonts({
     Inter_400Regular,
     Inter_500Medium,
@@ -230,7 +243,7 @@ const RootLayoutNav = () => {
 
   if (!CLERK_PUBLISHABLE_KEY) {
     return (
-      <GestureHandlerRootView style={{ flex: 1, backgroundColor: Colors.cream }}>
+      <GestureHandlerRootView style={{ flex: 1, backgroundColor: colors.cream }}>
         <MissingClerkKey />
       </GestureHandlerRootView>
     );
@@ -241,8 +254,8 @@ const RootLayoutNav = () => {
     // token across force-closes. Without it, Clerk falls back to memory and a
     // cold launch looks like a signed-out device.
     <ClerkProvider publishableKey={CLERK_PUBLISHABLE_KEY} tokenCache={tokenCache}>
-      <GestureHandlerRootView style={{ flex: 1, backgroundColor: Colors.cream }}>
-        <StatusBar style="dark" />
+      <GestureHandlerRootView style={{ flex: 1, backgroundColor: colors.cream }}>
+        <StatusBar style={resolvedTheme === 'dark' ? 'light' : 'dark'} />
         <InitialLayout onReady={() => setClerkReady(true)} />
         {readyToHandoff && !splashDone && (
           <ArchiusSplash onFinish={() => setSplashDone(true)} />
@@ -252,10 +265,19 @@ const RootLayoutNav = () => {
   );
 };
 
-const RootWithBoundary = () => (
-  <RootErrorBoundary>
-    <RootLayoutNav />
-  </RootErrorBoundary>
+const RootWithBoundary = () => {
+  const { colors } = useAppTheme();
+  return (
+    <RootErrorBoundary colors={colors}>
+      <RootLayoutNav />
+    </RootErrorBoundary>
+  );
+};
+
+const Root = () => (
+  <ThemeProvider>
+    <RootWithBoundary />
+  </ThemeProvider>
 );
 
-export default RootWithBoundary;
+export default Root;

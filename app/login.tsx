@@ -1,11 +1,12 @@
 import BrandMark from '@/components/BrandMark';
 import DragHandle from '@/components/DragHandle';
-import Colors from '@/constants/Colors';
+import type { AppColors } from '@/constants/Colors';
 import { defaultStyles } from '@/constants/Styles';
+import { useThemeColors } from '@/providers/Theme';
 import { resolveApiBaseUrl } from '@/utils/apiUrl';
 import { useAuth, useSignIn, useSignUp } from '@clerk/clerk-expo';
 import { Redirect, useLocalSearchParams } from 'expo-router';
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import {
   ActivityIndicator,
   KeyboardAvoidingView,
@@ -27,6 +28,8 @@ type Mode = 'form' | 'verify';
 const REVIEW_DEMO_EMAIL = 'appreview@archius.app';
 
 const Login = () => {
+  const Colors = useThemeColors();
+  const styles = useMemo(() => createStyles(Colors), [Colors]);
   const { type } = useLocalSearchParams<{ type: string }>();
   const { isLoaded: isAuthLoaded, isSignedIn } = useAuth({
     treatPendingAsSignedOut: false,
@@ -221,10 +224,10 @@ const Login = () => {
     <KeyboardAvoidingView
       behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
       keyboardVerticalOffset={Platform.OS === 'ios' ? 60 : 0}
-      style={[defaultStyles.pageContainer, styles.container]}>
+      style={[defaultStyles.pageContainer, styles.container, { backgroundColor: Colors.cream }]}>
       {loading && (
         <View style={styles.loadingOverlay}>
-          <ActivityIndicator size="large" color="#fff" />
+          <ActivityIndicator size="large" color={Colors.onControl} />
         </View>
       )}
 
@@ -349,11 +352,11 @@ const Login = () => {
   );
 };
 
-const styles = StyleSheet.create({
+const createStyles = (Colors: AppColors) => StyleSheet.create({
   container: { paddingHorizontal: 24 },
   loadingOverlay: {
     ...StyleSheet.absoluteFillObject,
-    backgroundColor: 'rgba(31, 68, 88, 0.5)',
+    backgroundColor: Colors.inkScrim50,
     justifyContent: 'center',
     alignItems: 'center',
     zIndex: 1000,
@@ -385,7 +388,7 @@ const styles = StyleSheet.create({
     fontFamily: 'Inter_400Regular',
     fontSize: 16,
     color: Colors.graphite,
-    backgroundColor: '#fff',
+    backgroundColor: Colors.surface,
   },
   codeField: {
     textAlign: 'center',
@@ -407,10 +410,10 @@ const styles = StyleSheet.create({
     fontSize: 13,
     color: Colors.blueprint,
   },
-  btnPrimary: { backgroundColor: Colors.ink },
+  btnPrimary: { backgroundColor: Colors.control },
   btnPrimaryText: {
     fontFamily: 'Inter_600SemiBold',
-    color: '#fff',
+    color: Colors.onControl,
     fontSize: 16,
   },
   helperText: {

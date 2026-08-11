@@ -3,7 +3,7 @@ import ChatMessage from '@/components/ChatMessage';
 import MessageIdeas from '@/components/MessageIdeas';
 import MessageInput, { type MessageInputHandle } from '@/components/MessageInput';
 import PopoverMenu, { type PopoverAnchor } from '@/components/PopoverMenu';
-import Colors from '@/constants/Colors';
+import type { AppColors } from '@/constants/Colors';
 import { defaultStyles } from '@/constants/Styles';
 import {
   addChat,
@@ -16,6 +16,7 @@ import {
 import { emitChatsChanged } from '@/utils/events';
 import { type EmailDraft, type EventDraft, Message, type MessageSource, Role } from '@/utils/Interfaces';
 import { useRevenueCat } from '@/providers/RevenueCat';
+import { useThemeColors } from '@/providers/Theme';
 import { useAuth, useUser } from '@clerk/clerk-expo';
 import { useChat } from '@ai-sdk/react';
 import { DefaultChatTransport, type UIMessage } from 'ai';
@@ -268,6 +269,8 @@ const friendlyError = (err: unknown): FriendlyError => {
 };
 
 const ChatPage = () => {
+  const Colors = useThemeColors();
+  const styles = useMemo(() => createStyles(Colors), [Colors]);
   const db = useSQLiteContext();
   const { id } = useLocalSearchParams<{ id?: string }>();
   const router = useRouter();
@@ -878,7 +881,7 @@ const ChatPage = () => {
     <KeyboardAvoidingView
       behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
       keyboardVerticalOffset={headerHeight}
-      style={defaultStyles.pageContainer}>
+      style={[defaultStyles.pageContainer, { backgroundColor: Colors.cream }]}>
       <Stack.Screen
         options={{
           headerTitle:
@@ -896,7 +899,7 @@ const ChatPage = () => {
               entering={FadeIn.duration(260).easing(ReanimatedEasing.out(ReanimatedEasing.cubic))}
               style={styles.emptyInner}>
               <View style={styles.markCircle}>
-                <BrandMark size={36} color="#fff" />
+                <BrandMark size={36} color={Colors.onControl} />
               </View>
               <Text style={styles.emptyTitle}>
                 {firstName ? `Hello, ${firstName}` : 'How can I help?'}
@@ -986,7 +989,7 @@ const ChatPage = () => {
                   onPress={onSignInAgain}
                   accessibilityLabel="Sign in again"
                   accessibilityRole="button">
-                  <Ionicons name="log-in-outline" size={14} color="#fff" />
+                  <Ionicons name="log-in-outline" size={14} color={Colors.onControl} />
                   <Text style={styles.retryBtnText}>Sign in</Text>
                 </TouchableOpacity>
               ) : errorInfo.action === 'upgrade' ? (
@@ -995,7 +998,7 @@ const ChatPage = () => {
                     style={styles.retryBtn}
                     accessibilityLabel="Upgrade to Archius Pro"
                     accessibilityRole="button">
-                    <Ionicons name="rocket-outline" size={14} color="#fff" />
+                    <Ionicons name="rocket-outline" size={14} color={Colors.onControl} />
                     <Text style={styles.retryBtnText}>Upgrade</Text>
                   </TouchableOpacity>
                 </Link>
@@ -1005,7 +1008,7 @@ const ChatPage = () => {
                   onPress={onRetry}
                   accessibilityLabel="Retry"
                   accessibilityRole="button">
-                  <Ionicons name="refresh" size={14} color="#fff" />
+                  <Ionicons name="refresh" size={14} color={Colors.onControl} />
                   <Text style={styles.retryBtnText}>Retry</Text>
                 </TouchableOpacity>
               )}
@@ -1092,7 +1095,7 @@ const ChatPage = () => {
   );
 };
 
-const styles = StyleSheet.create({
+const createStyles = (Colors: AppColors) => StyleSheet.create({
   page: { flex: 1 },
   emptyState: {
     position: 'absolute',
@@ -1112,10 +1115,10 @@ const styles = StyleSheet.create({
     width: 64,
     height: 64,
     borderRadius: 20,
-    backgroundColor: Colors.ink,
+    backgroundColor: Colors.control,
     alignItems: 'center',
     justifyContent: 'center',
-    shadowColor: Colors.ink,
+    shadowColor: Colors.shadow,
     shadowOffset: { width: 0, height: 6 },
     shadowOpacity: 0.15,
     shadowRadius: 14,
@@ -1170,14 +1173,14 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 4,
-    backgroundColor: Colors.ink,
+    backgroundColor: Colors.control,
     paddingHorizontal: 12,
     paddingVertical: 8,
     borderRadius: 18,
   },
   retryBtnText: {
     fontFamily: 'Inter_500Medium',
-    color: '#fff',
+    color: Colors.onControl,
     fontSize: 12,
   },
   scrollToBottomWrap: {
@@ -1191,12 +1194,12 @@ const styles = StyleSheet.create({
     width: 40,
     height: 40,
     borderRadius: 20,
-    backgroundColor: '#fff',
+    backgroundColor: Colors.surfaceElevated,
     alignItems: 'center',
     justifyContent: 'center',
     borderWidth: 1,
     borderColor: Colors.stone,
-    shadowColor: Colors.ink,
+    shadowColor: Colors.shadow,
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.1,
     shadowRadius: 8,

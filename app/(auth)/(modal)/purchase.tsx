@@ -1,10 +1,11 @@
-import Colors from '@/constants/Colors';
+import type { AppColors } from '@/constants/Colors';
 import { defaultStyles, eyebrow } from '@/constants/Styles';
 import { useRevenueCat } from '@/providers/RevenueCat';
+import { useThemeColors } from '@/providers/Theme';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import * as WebBrowser from 'expo-web-browser';
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import {
   ActivityIndicator,
   Pressable,
@@ -92,6 +93,8 @@ const AUTO_RENEW_DISCLOSURE =
   'Subscription automatically renews unless canceled at least 24 hours before the end of the current period.';
 
 const Paywall = () => {
+  const Colors = useThemeColors();
+  const styles = useMemo(() => createStyles(Colors), [Colors]);
   const { bottom } = useSafeAreaInsets();
   const router = useRouter();
   const { packages, purchasePackage, restorePermissions } = useRevenueCat();
@@ -132,9 +135,9 @@ const Paywall = () => {
   };
 
   return (
-    <View style={[defaultStyles.pageContainer, { paddingBottom: bottom }]}>
+    <View style={[defaultStyles.pageContainer, { paddingBottom: bottom, backgroundColor: Colors.cream }]}>
       <ScrollView contentContainerStyle={styles.content}>
-        <Text style={[eyebrow, { marginBottom: 8 }]}>Pro</Text>
+        <Text style={[eyebrow, { marginBottom: 8, color: Colors.blueprint }]}>Pro</Text>
         <Text style={styles.heading}>
           AI that <Text style={styles.headingItalic}>actually</Text> works
         </Text>
@@ -281,7 +284,7 @@ const Paywall = () => {
   );
 };
 
-const styles = StyleSheet.create({
+const createStyles = (Colors: AppColors) => StyleSheet.create({
   content: { padding: 24, paddingBottom: 40 },
   heading: {
     fontFamily: 'SourceSerif4_300Light',
@@ -306,7 +309,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 12,
     padding: 14,
-    backgroundColor: '#fff',
+    backgroundColor: Colors.surface,
     borderRadius: 14,
     borderWidth: 1,
     borderColor: Colors.stone,
@@ -341,7 +344,7 @@ const styles = StyleSheet.create({
     marginTop: 8,
   },
   compareTable: {
-    backgroundColor: '#fff',
+    backgroundColor: Colors.surface,
     borderRadius: 14,
     borderWidth: 1,
     borderColor: Colors.stone,
@@ -376,7 +379,7 @@ const styles = StyleSheet.create({
     textAlign: 'center',
   },
   priceCard: {
-    backgroundColor: Colors.ink,
+    backgroundColor: Colors.brandPanel,
     borderRadius: 14,
     padding: 18,
     flexDirection: 'row',
@@ -394,12 +397,12 @@ const styles = StyleSheet.create({
   priceValue: {
     fontFamily: 'Inter_700Bold',
     fontSize: 26,
-    color: '#fff',
+    color: Colors.onBrandPanel,
     marginTop: 4,
   },
-  priceNote: { fontFamily: 'Inter_400Regular', fontSize: 14, color: Colors.creamSoft, opacity: 0.7 },
+  priceNote: { fontFamily: 'Inter_400Regular', fontSize: 14, color: Colors.onBrandPanelMuted, opacity: 0.78 },
   faqWrap: {
-    backgroundColor: '#fff',
+    backgroundColor: Colors.surface,
     borderRadius: 14,
     borderWidth: 1,
     borderColor: Colors.stone,
@@ -438,8 +441,8 @@ const styles = StyleSheet.create({
     lineHeight: 18,
   },
   footer: { paddingHorizontal: 24, paddingTop: 8 },
-  cta: { backgroundColor: Colors.ink },
-  ctaText: { fontFamily: 'Inter_600SemiBold', color: '#fff', fontSize: 16 },
+  cta: { backgroundColor: Colors.control },
+  ctaText: { fontFamily: 'Inter_600SemiBold', color: Colors.onControl, fontSize: 16 },
   maybeLater: { alignItems: 'center', paddingVertical: 12 },
   maybeLaterText: {
     fontFamily: 'Inter_500Medium',

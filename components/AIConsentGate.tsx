@@ -6,13 +6,14 @@
 // on the login sheet was ruled insufficient — this gate requires an
 // affirmative "Agree" tap before the chat UI is reachable.
 
-import Colors from '@/constants/Colors';
+import type { AppColors } from '@/constants/Colors';
 import { defaultStyles } from '@/constants/Styles';
+import { useThemeColors } from '@/providers/Theme';
 import { storage } from '@/utils/Storage';
 import { useAuth } from '@clerk/clerk-expo';
 import { Ionicons } from '@expo/vector-icons';
 import * as WebBrowser from 'expo-web-browser';
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import { ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
@@ -46,6 +47,8 @@ const disclosures: Disclosure[] = [
 ];
 
 export const AIConsentGate = ({ children }: { children: React.ReactNode }) => {
+  const Colors = useThemeColors();
+  const styles = useMemo(() => createStyles(Colors), [Colors]);
   const { userId, signOut } = useAuth({ treatPendingAsSignedOut: false });
   const [accepted, setAccepted] = useState(() => hasAIConsent(userId));
   const { top, bottom } = useSafeAreaInsets();
@@ -113,7 +116,7 @@ export const AIConsentGate = ({ children }: { children: React.ReactNode }) => {
   );
 };
 
-const styles = StyleSheet.create({
+const createStyles = (Colors: AppColors) => StyleSheet.create({
   container: { flex: 1, backgroundColor: Colors.cream },
   content: { paddingHorizontal: 24, paddingBottom: 24 },
   eyebrow: {
@@ -141,7 +144,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     gap: 12,
     padding: 14,
-    backgroundColor: '#fff',
+    backgroundColor: Colors.surface,
     borderRadius: 14,
     borderWidth: 1,
     borderColor: Colors.stone,
@@ -176,8 +179,8 @@ const styles = StyleSheet.create({
   },
   link: { color: Colors.blueprint, textDecorationLine: 'underline' },
   footer: { paddingHorizontal: 24, paddingTop: 8 },
-  agreeBtn: { backgroundColor: Colors.ink },
-  agreeText: { fontFamily: 'Inter_600SemiBold', color: '#fff', fontSize: 16 },
+  agreeBtn: { backgroundColor: Colors.control },
+  agreeText: { fontFamily: 'Inter_600SemiBold', color: Colors.onControl, fontSize: 16 },
   declineBtn: { alignItems: 'center', paddingVertical: 14 },
   declineText: { fontFamily: 'Inter_500Medium', fontSize: 14, color: Colors.slate },
 });

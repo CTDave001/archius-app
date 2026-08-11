@@ -1,5 +1,6 @@
 import BrandMark from '@/components/BrandMark';
-import Colors from '@/constants/Colors';
+import type { AppColors } from '@/constants/Colors';
+import { useThemeColors } from '@/providers/Theme';
 import { lightImpact, success, tap } from '@/utils/haptics';
 import { type EmailDraft, type EventDraft, Message, type MessageSource, Role } from '@/utils/Interfaces';
 import { Ionicons } from '@expo/vector-icons';
@@ -9,7 +10,7 @@ import * as WebBrowser from 'expo-web-browser';
 // level). Its native module runs a lookup at import time which throws — and
 // would crash the whole app at startup — if the dev client hasn't been
 // rebuilt with it. Lazy import keeps the crash contained to the action.
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Alert,
   Image,
@@ -36,8 +37,15 @@ import Animated, {
   withTiming,
 } from 'react-native-reanimated';
 
+const useMessageTheme = () => {
+  const Colors = useThemeColors();
+  const styles = useMemo(() => createStyles(Colors), [Colors]);
+  return { Colors, styles };
+};
+
 // 3-dot typing indicator (staggered scale+fade), Conduit-style.
 const TypingDot = ({ delay }: { delay: number }) => {
+  const { styles } = useMessageTheme();
   const scale = useSharedValue(0.4);
   const opacity = useSharedValue(0);
 
@@ -68,15 +76,19 @@ const TypingDot = ({ delay }: { delay: number }) => {
   return <Animated.View style={[styles.typingDot, style]} />;
 };
 
-const TypingIndicator = () => (
-  <View style={styles.typingRow}>
-    <TypingDot delay={0} />
-    <TypingDot delay={150} />
-    <TypingDot delay={300} />
-  </View>
-);
+const TypingIndicator = () => {
+  const { styles } = useMessageTheme();
+  return (
+    <View style={styles.typingRow}>
+      <TypingDot delay={0} />
+      <TypingDot delay={150} />
+      <TypingDot delay={300} />
+    </View>
+  );
+};
 
 const CodeBlock = ({ content, language }: { content: string; language?: string }) => {
+  const { styles } = useMessageTheme();
   const [copied, setCopied] = useState(false);
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -129,7 +141,7 @@ const CodeBlock = ({ content, language }: { content: string; language?: string }
   );
 };
 
-const markdownRules = {
+const createMarkdownRules = (Colors: AppColors) => ({
   fence: (node: any) => (
     <CodeBlock key={node.key} content={node.content} language={node.sourceInfo} />
   ),
@@ -137,7 +149,13 @@ const markdownRules = {
     <CodeBlock key={node.key} content={node.content} language={node.sourceInfo} />
   ),
   image: (node: any) => (
-    <Text key={node.key} style={markdownImageStyle}>
+    <Text
+      key={node.key}
+      style={{
+        fontFamily: 'JetBrainsMono_400Regular',
+        fontSize: 14,
+        color: Colors.blueprint,
+      }}>
       [{node.attributes?.alt || 'image'}]
     </Text>
   ),
@@ -148,13 +166,7 @@ const markdownRules = {
       {node.content}
     </Text>
   ),
-};
-
-const markdownImageStyle = {
-  fontFamily: 'JetBrainsMono_400Regular' as const,
-  fontSize: 14,
-  color: Colors.blueprint,
-};
+});
 
 const ActionButton = ({
   icon,
@@ -166,7 +178,9 @@ const ActionButton = ({
   label: string;
   onPress: () => void;
   highlighted?: boolean;
-}) => (
+}) => {
+  const { Colors, styles } = useMessageTheme();
+  return (
   <Pressable
     onPress={() => {
       tap();
@@ -185,16 +199,21 @@ const ActionButton = ({
       color={highlighted ? Colors.sage : Colors.slate}
     />
   </Pressable>
-);
+  );
+};
 
-const BotMark = () => (
-  <View style={styles.botMarkSquare}>
-    <BrandMark size={14} color="#fff" />
-  </View>
-);
+const BotMark = () => {
+  const { Colors, styles } = useMessageTheme();
+  return (
+    <View style={styles.botMarkSquare}>
+      <BrandMark size={14} color={Colors.onControl} />
+    </View>
+  );
+};
 
 // Animated "Searching the web…" chip shown while the web_search tool runs.
 const SearchingChip = ({ query }: { query?: string }) => {
+  const { Colors, styles } = useMessageTheme();
   const pulse = useSharedValue(0.5);
   useEffect(() => {
     pulse.value = withRepeat(
@@ -243,6 +262,7 @@ const EmailCard = ({
   messageId?: string;
   editsMap?: Map<string, EmailDraft>;
 }) => {
+  const { Colors, styles } = useMessageTheme();
   const persisted = messageId ? editsMap?.get(messageId) : undefined;
   const [to, setTo] = useState(persisted?.to ?? email.to ?? '');
   const [subject, setSubject] = useState(persisted?.subject ?? email.subject);
@@ -346,7 +366,7 @@ const EmailCard = ({
           accessibilityRole="button"
           hitSlop={8}
           style={({ pressed }) => [styles.emailSendBtn, pressed && styles.emailSendBtnPressed]}>
-          <Ionicons name="send" size={14} color="#fff" />
+          <Ionicons name="send" size={14} color={Colors.onControl} />
           <Text style={styles.emailSendText}>Send</Text>
         </Pressable>
       </View>
@@ -356,6 +376,7 @@ const EmailCard = ({
 
 // A drafted calendar event rendered as a card with an Add-to-Calendar button.
 const EventCard = ({ event }: { event: EventDraft }) => {
+  const { Colors, styles } = useMessageTheme();
   const start = new Date(event.startISO);
   const validStart = !Number.isNaN(start.getTime());
   const end = event.endISO ? new Date(event.endISO) : null;
@@ -425,7 +446,7 @@ const EventCard = ({ event }: { event: EventDraft }) => {
           accessibilityRole="button"
           hitSlop={8}
           style={({ pressed }) => [styles.emailSendBtn, pressed && styles.emailSendBtnPressed]}>
-          <Ionicons name="calendar" size={14} color="#fff" />
+          <Ionicons name="calendar" size={14} color={Colors.onControl} />
           <Text style={styles.emailSendText}>Add to Calendar</Text>
         </Pressable>
       </View>
@@ -433,7 +454,9 @@ const EventCard = ({ event }: { event: EventDraft }) => {
   );
 };
 
-const SourcesList = ({ sources }: { sources: MessageSource[] }) => (
+const SourcesList = ({ sources }: { sources: MessageSource[] }) => {
+  const { Colors, styles } = useMessageTheme();
+  return (
   <View style={styles.sourcesWrap}>
     <View style={styles.sourcesHeaderRow}>
       <Ionicons name="link-outline" size={13} color={Colors.slate} />
@@ -460,7 +483,8 @@ const SourcesList = ({ sources }: { sources: MessageSource[] }) => (
       ))}
     </View>
   </View>
-);
+  );
+};
 
 // Inline editor that replaces a user bubble when editing. Local draft state
 // so each open starts fresh; nothing is destroyed until Save is pressed.
@@ -473,6 +497,7 @@ const InlineEditor = ({
   onSave: (text: string) => void;
   onCancel: () => void;
 }) => {
+  const { Colors, styles } = useMessageTheme();
   const [draft, setDraft] = useState(initialValue);
   const trimmed = draft.trim();
   const canSave = trimmed.length > 0;
@@ -563,6 +588,9 @@ const ChatMessage = ({
   messageId?: string;
   emailEditsMap?: Map<string, EmailDraft>;
 }) => {
+  const { Colors, styles } = useMessageTheme();
+  const markdownStyles = useMemo(() => createMarkdownStyles(Colors), [Colors]);
+  const markdownRules = useMemo(() => createMarkdownRules(Colors), [Colors]);
   const isBot = role === Role.Bot;
   const [copied, setCopied] = useState(false);
   const copyTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -723,7 +751,7 @@ const ChatMessage = ({
   );
 };
 
-const styles = StyleSheet.create({
+const createStyles = (Colors: AppColors) => StyleSheet.create({
   // Bot — full width, document-style flow.
   botRow: {
     paddingHorizontal: 16,
@@ -739,7 +767,7 @@ const styles = StyleSheet.create({
     width: 22,
     height: 22,
     borderRadius: 6,
-    backgroundColor: Colors.ink,
+    backgroundColor: Colors.control,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -753,12 +781,12 @@ const styles = StyleSheet.create({
   // Inline editor (replaces the user bubble during edit)
   editorWrap: {
     width: '100%',
-    backgroundColor: '#fff',
+    backgroundColor: Colors.surfaceElevated,
     borderRadius: 16,
     borderWidth: 1,
     borderColor: Colors.blueprint,
     padding: 12,
-    shadowColor: Colors.ink,
+    shadowColor: Colors.shadow,
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.06,
     shadowRadius: 8,
@@ -797,10 +825,10 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingVertical: 8,
     borderRadius: 10,
-    backgroundColor: Colors.ink,
+    backgroundColor: Colors.control,
   },
   editorSaveBtnPressed: {
-    backgroundColor: Colors.inkDeep,
+    backgroundColor: Colors.controlPressed,
   },
   editorSaveBtnDisabled: {
     backgroundColor: Colors.stoneDark,
@@ -808,7 +836,7 @@ const styles = StyleSheet.create({
   editorSaveText: {
     fontFamily: 'Inter_600SemiBold',
     fontSize: 14,
-    color: '#fff',
+    color: Colors.onControl,
   },
 
   // User — right-aligned with asymmetric "tail" bubble
@@ -823,7 +851,7 @@ const styles = StyleSheet.create({
     maxWidth: '78%',
     borderRadius: 16,
     marginBottom: 6,
-    backgroundColor: Colors.creamSoft,
+    backgroundColor: Colors.userBubble,
   },
   userBubble: {
     maxWidth: '78%',
@@ -840,7 +868,7 @@ const styles = StyleSheet.create({
   userText: {
     fontFamily: 'Inter_400Regular',
     fontSize: 17,
-    color: Colors.graphite,
+    color: Colors.onUserBubble,
     lineHeight: 23,
     letterSpacing: -0.41,
   },
@@ -897,7 +925,7 @@ const styles = StyleSheet.create({
   // Email draft card
   emailCard: {
     marginTop: 12,
-    backgroundColor: '#fff',
+    backgroundColor: Colors.surface,
     borderRadius: 14,
     borderWidth: 1,
     borderColor: Colors.stone,
@@ -980,15 +1008,15 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingVertical: 8,
     borderRadius: 10,
-    backgroundColor: Colors.ink,
+    backgroundColor: Colors.control,
   },
-  emailSendBtnPressed: { backgroundColor: Colors.inkDeep },
-  emailSendText: { fontFamily: 'Inter_600SemiBold', fontSize: 13, color: '#fff' },
+  emailSendBtnPressed: { backgroundColor: Colors.controlPressed },
+  emailSendText: { fontFamily: 'Inter_600SemiBold', fontSize: 13, color: Colors.onControl },
 
   // Event card
   eventCard: {
     marginTop: 12,
-    backgroundColor: '#fff',
+    backgroundColor: Colors.surface,
     borderRadius: 14,
     borderWidth: 1,
     borderColor: Colors.stone,
@@ -1075,7 +1103,7 @@ const styles = StyleSheet.create({
   sourceChipNum: {
     fontFamily: 'Inter_700Bold',
     fontSize: 11,
-    color: '#fff',
+    color: Colors.onControl,
     backgroundColor: Colors.blueprint,
     width: 16,
     height: 16,
@@ -1109,7 +1137,7 @@ const styles = StyleSheet.create({
   // Code blocks
   codeBlockWrap: {
     width: '100%',
-    backgroundColor: '#282C34',
+    backgroundColor: Colors.codeSurface,
     borderRadius: 16,
     borderWidth: StyleSheet.hairlineWidth,
     borderColor: 'rgba(255,255,255,0.08)',
@@ -1155,7 +1183,7 @@ const styles = StyleSheet.create({
   },
 });
 
-const markdownStyles = StyleSheet.create({
+const createMarkdownStyles = (Colors: AppColors) => StyleSheet.create({
   body: {
     fontFamily: 'Inter_400Regular',
     fontSize: 17,
