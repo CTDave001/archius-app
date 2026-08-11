@@ -1,52 +1,13 @@
 import type { AppColors } from '@/constants/Colors';
 import { useAppTheme } from '@/providers/Theme';
-import { useAuth } from '@clerk/clerk-expo';
 import { Ionicons } from '@expo/vector-icons';
 import { Stack, useRouter } from 'expo-router';
-import React, { useEffect } from 'react';
+import React from 'react';
 import { Pressable, StyleSheet } from 'react-native';
 
-import { SQLiteProvider, useSQLiteContext } from 'expo-sqlite';
-import {
-  claimLegacyChats,
-  migrateDbIfNeeded,
-  setActiveChatUser,
-} from '@/utils/Database';
 import { AIConsentGate } from '@/components/AIConsentGate';
+import { ChatDatabaseProvider } from '@/providers/ChatDatabase';
 import { RevenueCatProvider } from '@/providers/RevenueCat';
-
-// Registers the signed-in Clerk user with the DB layer so chat queries are
-// scoped per account. Children are held back until the legacy-row claim
-// finishes — otherwise the drawer's first getChats runs against unclaimed
-// (NULL user_id) rows and the chat list flashes empty after an update.
-const ScopeDbToUser = ({ children }: { children: React.ReactNode }) => {
-  const { userId } = useAuth({ treatPendingAsSignedOut: false });
-  const db = useSQLiteContext();
-  const [readyUserId, setReadyUserId] = React.useState<string | null>(null);
-
-  useEffect(() => {
-    let cancelled = false;
-    setReadyUserId(null);
-    setActiveChatUser(userId ?? null);
-
-    (async () => {
-      if (userId) {
-        await claimLegacyChats(db, userId).catch(() => undefined);
-      }
-      if (!cancelled && userId) setReadyUserId(userId);
-    })();
-
-    return () => {
-      cancelled = true;
-      setActiveChatUser(null);
-    };
-  }, [db, userId]);
-
-  // Fail closed while Clerk changes accounts: never render chat consumers
-  // under a stale activeChatUserId, even for a single transition frame.
-  if (!userId || readyUserId !== userId) return null;
-  return <>{children}</>;
-};
 
 const Layout = () => {
   const router = useRouter();
@@ -55,8 +16,7 @@ const Layout = () => {
 
   return (
     <RevenueCatProvider>
-      <SQLiteProvider databaseName="chat.db" onInit={migrateDbIfNeeded}>
-        <ScopeDbToUser>
+      <ChatDatabaseProvider>
         <AIConsentGate>
         <Stack
           // Native modal headers can retain their presentation-time colors.
@@ -119,8 +79,7 @@ const Layout = () => {
           />
         </Stack>
         </AIConsentGate>
-        </ScopeDbToUser>
-      </SQLiteProvider>
+      </ChatDatabaseProvider>
     </RevenueCatProvider>
   );
 };

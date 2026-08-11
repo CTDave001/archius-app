@@ -5,16 +5,9 @@ import MessageInput, { type MessageInputHandle } from '@/components/MessageInput
 import PopoverMenu, { type PopoverAnchor } from '@/components/PopoverMenu';
 import type { AppColors } from '@/constants/Colors';
 import { defaultStyles } from '@/constants/Styles';
-import {
-  addChat,
-  addMessage,
-  deleteLastNMessages,
-  getChat,
-  getMessages,
-  renameChat,
-} from '@/utils/Database';
 import { emitChatsChanged } from '@/utils/events';
 import { type EmailDraft, type EventDraft, Message, type MessageSource, Role } from '@/utils/Interfaces';
+import { useChatDatabase } from '@/providers/ChatDatabase';
 import { useRevenueCat } from '@/providers/RevenueCat';
 import { useThemeColors } from '@/providers/Theme';
 import { useAuth, useUser } from '@clerk/clerk-expo';
@@ -30,7 +23,6 @@ import { fetch as expoFetch } from 'expo/fetch';
 // throws at import time if the dev client hasn't been rebuilt, which would
 // crash the app at startup. Lazy import contains that to the action.
 import { Link, Stack, useLocalSearchParams, useRouter } from 'expo-router';
-import { useSQLiteContext } from 'expo-sqlite';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Alert,
@@ -271,7 +263,7 @@ const friendlyError = (err: unknown): FriendlyError => {
 const ChatPage = () => {
   const Colors = useThemeColors();
   const styles = useMemo(() => createStyles(Colors), [Colors]);
-  const db = useSQLiteContext();
+  const db = useChatDatabase();
   const { id } = useLocalSearchParams<{ id?: string }>();
   const router = useRouter();
   const { getToken, signOut } = useAuth({ treatPendingAsSignedOut: false });
@@ -361,7 +353,7 @@ const ChatPage = () => {
       const sources = extractSourcesFromParts(parts);
       const email = extractEmailFromParts(parts);
       const event = extractEventFromParts(parts);
-      addMessage(db, parseInt(targetChatId, 10), {
+      db.addMessage(parseInt(targetChatId, 10), {
         role: Role.Bot,
         content: text,
         sources: sources.length > 0 ? sources : undefined,
@@ -433,7 +425,7 @@ const ChatPage = () => {
         const email = extractEmailFromParts(parts);
         const event = extractEventFromParts(parts);
         try {
-          await addMessage(db, parseInt(chatIdRef.current, 10), {
+          await db.addMessage(parseInt(chatIdRef.current, 10), {
             role: Role.Bot,
             content: text,
             sources: sources.length > 0 ? sources : undefined,
@@ -468,7 +460,7 @@ const ChatPage = () => {
               if (!(res as any).ok) return;
               const data = await (res as any).json();
               if (data?.title && typeof data.title === 'string') {
-                await renameChat(db, parseInt(cidStr, 10), data.title);
+                await db.renameChat(parseInt(cidStr, 10), data.title);
                 emitChatsChanged();
                 // Reflect the new title in the header for the current session.
                 if (cidStr === chatIdRef.current) setChatTitle(data.title);
@@ -544,7 +536,7 @@ const ChatPage = () => {
 
     (async () => {
       try {
-        const history = await getMessages(db, numericId);
+        const history = await db.getMessages(numericId);
         if (cancelled) return;
         const ui = historyToUIMessages(history);
         // Rebuild the persisted-artifact maps keyed by the same ids
@@ -567,7 +559,7 @@ const ChatPage = () => {
         if (!cancelled) console.warn('Failed to load messages', e);
       }
       try {
-        const row = await getChat(db, numericId);
+        const row = await db.getChat(numericId);
         if (cancelled) return;
         setChatTitle(row?.title ?? '');
       } catch {
@@ -604,7 +596,7 @@ const ChatPage = () => {
       isCreatingChatRef.current = true;
       try {
         const title = (trimmed || 'Image').slice(0, 60);
-        const res = await addChat(db, title);
+        const res = await db.addChat(title);
         const newId = String(res.lastInsertRowId);
         chatIdRef.current = newId;
         createdChatId = newId;
@@ -631,15 +623,16 @@ const ChatPage = () => {
     if (chatIdRef.current) {
       try {
         // Copy the attached image into documents/ so it survives across
-        // launches; store the persistent URI alongside the text.
+        // launches. The browser already has a durable data URL which can be
+        // stored with the synced message; native keeps its compact file URI.
         let persistedImageUri: string | undefined;
         if (image) {
-          persistedImageUri = await persistImageToDocuments(
-            image.uri,
-            chatIdRef.current
-          );
+          persistedImageUri =
+            Platform.OS === 'web'
+              ? image.dataUrl
+              : await persistImageToDocuments(image.uri, chatIdRef.current);
         }
-        await addMessage(db, parseInt(chatIdRef.current, 10), {
+        await db.addMessage(parseInt(chatIdRef.current, 10), {
           role: Role.User,
           content: trimmed,
           imageUri: persistedImageUri,
@@ -862,8 +855,8 @@ const ChatPage = () => {
 
     if (targetChatId) {
       try {
-        await deleteLastNMessages(db, parseInt(targetChatId, 10), removedCount);
-        await addMessage(db, parseInt(targetChatId, 10), {
+        await db.deleteLastNMessages(parseInt(targetChatId, 10), removedCount);
+        await db.addMessage(parseInt(targetChatId, 10), {
           role: Role.User,
           content: trimmed,
         });
@@ -892,6 +885,7 @@ const ChatPage = () => {
                 : 'Archius',
         }}
       />
+      <View style={styles.chatColumn}>
       <View style={styles.page}>
         {renderedMessages.length === 0 && (
           <View style={styles.emptyState} pointerEvents="box-none">
@@ -1091,11 +1085,18 @@ const ChatPage = () => {
           },
         ]}
       />
+      </View>
     </KeyboardAvoidingView>
   );
 };
 
 const createStyles = (Colors: AppColors) => StyleSheet.create({
+  chatColumn: {
+    flex: 1,
+    width: '100%',
+    maxWidth: Platform.OS === 'web' ? 960 : undefined,
+    alignSelf: 'center',
+  },
   page: { flex: 1 },
   emptyState: {
     position: 'absolute',

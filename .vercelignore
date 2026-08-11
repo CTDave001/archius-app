@@ -2,3 +2,12 @@
 .env
 .env.*
 !.env.example
+.env
+.env.*
+.expo
+dist
+ios
+android
+*.log
+scripts/make_app_screenshots.py
+scripts/make_paywall_screenshot.py

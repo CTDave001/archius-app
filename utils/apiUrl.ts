@@ -1,4 +1,5 @@
 import Constants from 'expo-constants';
+import { Platform } from 'react-native';
 
 /**
  * Resolve the Expo Router API origin.
@@ -10,6 +11,16 @@ import Constants from 'expo-constants';
 export const resolveApiBaseUrl = (): string => {
   const configured = process.env.EXPO_PUBLIC_API_URL?.trim().replace(/\/+$/, '');
   if (configured) return configured;
+
+  // Browser builds are served beside the Expo Router API functions. Keeping
+  // requests same-origin makes previews, custom domains, and production all
+  // work without baking a deployment URL into the client bundle.
+  if (Platform.OS === 'web') {
+    if (typeof window !== 'undefined' && window.location?.origin) {
+      return window.location.origin.replace(/\/+$/, '');
+    }
+    return '';
+  }
 
   const hostUri =
     Constants.expoConfig?.hostUri ||

@@ -6,13 +6,12 @@ import { useRevenueCat } from '@/providers/RevenueCat';
 import { useAppTheme } from '@/providers/Theme';
 import { FREE_DAILY_MESSAGE_LIMIT, PRO_DAILY_FLASH_LIMIT } from '@/utils/ai';
 import { resolveApiBaseUrl } from '@/utils/apiUrl';
-import { deleteUserChats } from '@/utils/Database';
+import { useChatDatabase } from '@/providers/ChatDatabase';
 import { emitChatsChanged } from '@/utils/events';
 import { isHapticsEnabled, setHapticsEnabled } from '@/utils/haptics';
 import { useAuth, useUser } from '@clerk/clerk-expo';
 import { Ionicons } from '@expo/vector-icons';
 import { Link } from 'expo-router';
-import { useSQLiteContext } from 'expo-sqlite';
 import * as WebBrowser from 'expo-web-browser';
 import { useEffect, useMemo, useState } from 'react';
 import {
@@ -34,6 +33,7 @@ const SUPPORT_URL = 'mailto:hello@archius.app';
 
 const APPLE_SUBSCRIPTIONS_URL = 'https://apps.apple.com/account/subscriptions';
 const GOOGLE_SUBSCRIPTIONS_URL = 'https://play.google.com/store/account/subscriptions';
+const WEB_CUSTOMER_PORTAL_URL = process.env.EXPO_PUBLIC_RC_CUSTOMER_PORTAL_URL?.trim();
 
 const Settings = () => {
   const { colors: Colors, mode, setMode } = useAppTheme();
@@ -41,7 +41,7 @@ const Settings = () => {
   const { signOut, getToken, userId } = useAuth({ treatPendingAsSignedOut: false });
   const { user } = useUser();
   const { isPro, restorePermissions } = useRevenueCat();
-  const db = useSQLiteContext();
+  const db = useChatDatabase();
   const [usage, setUsage] = useState<{ used: number; limit: number } | null>(null);
   const [hapticsOn, setHapticsOn] = useState<boolean>(isHapticsEnabled());
 
@@ -72,7 +72,12 @@ const Settings = () => {
     // no longer wipes them — they're invisible to other accounts and come
     // back when this account signs back in. Deleting data stays available
     // via Delete Account (and chat-level delete).
-    Alert.alert('Sign out?', 'Your chats stay on this device and will be here when you sign back in.', [
+    Alert.alert(
+      'Sign out?',
+      Platform.OS === 'web'
+        ? 'Your synced conversations will be here when you sign back in.'
+        : 'Your chats stay on this device and will be here when you sign back in.',
+      [
       { text: 'Cancel', style: 'cancel' },
       {
         text: 'Sign out',
@@ -80,11 +85,24 @@ const Settings = () => {
           await signOut();
         },
       },
-    ]);
+      ]
+    );
   };
 
   const onManageSubscription = async () => {
-    const url = Platform.OS === 'ios' ? APPLE_SUBSCRIPTIONS_URL : GOOGLE_SUBSCRIPTIONS_URL;
+    const url =
+      Platform.OS === 'web'
+        ? WEB_CUSTOMER_PORTAL_URL
+        : Platform.OS === 'ios'
+          ? APPLE_SUBSCRIPTIONS_URL
+          : GOOGLE_SUBSCRIPTIONS_URL;
+    if (!url) {
+      Alert.alert(
+        'Manage subscription',
+        'Email hello@archius.app and we’ll help with your web subscription.'
+      );
+      return;
+    }
     try {
       await Linking.openURL(url);
     } catch {
@@ -95,7 +113,9 @@ const Settings = () => {
   const onDeleteAccount = () => {
     Alert.alert(
       'Delete account',
-      'This permanently deletes your Archius account and clears chat history from this device. Your subscription must be cancelled separately through your Apple ID or Google Play account.',
+      Platform.OS === 'web'
+        ? 'This permanently deletes your Archius account and synced web chat history. Cancel any active subscription separately first.'
+        : 'This permanently deletes your Archius account and clears chat history from this device. Your subscription must be cancelled separately through your Apple ID or Google Play account.',
       [
         { text: 'Cancel', style: 'cancel' },
         {
@@ -119,7 +139,7 @@ const Settings = () => {
               return;
             }
             try {
-              await deleteUserChats(db, deletedUserId);
+              await db.deleteUserChats(deletedUserId);
               emitChatsChanged();
             } catch (e: any) {
               // The account is already gone, so make the residual local-data
@@ -144,9 +164,16 @@ const Settings = () => {
   return (
     <ScrollView
       style={[defaultStyles.pageContainer, { backgroundColor: Colors.cream }]}
-      contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 40, paddingTop: 0 }}
+      contentContainerStyle={{
+        paddingHorizontal: 16,
+        paddingBottom: 40,
+        paddingTop: Platform.OS === 'web' ? 24 : 0,
+        width: '100%',
+        maxWidth: 780,
+        alignSelf: 'center',
+      }}
       contentInsetAdjustmentBehavior="automatic">
-      <DragHandle />
+      {Platform.OS !== 'web' && <DragHandle />}
 
       {/* Account */}
       <SectionHeader title="Account" />
@@ -196,14 +223,18 @@ const Settings = () => {
             <CardRow
               icon="card-outline"
               title="Manage Subscription"
-              subtitle="Cancel or change plan through your device account"
+              subtitle={
+                Platform.OS === 'web'
+                  ? 'Open billing settings for your web plan'
+                  : 'Cancel or change plan through your device account'
+              }
               onPress={onManageSubscription}
             />
             <Divider />
             <CardRow
               icon="refresh-circle-outline"
               title="Restore Purchases"
-              subtitle="Re-sync your Pro subscription on this device"
+              subtitle={Platform.OS === 'web' ? 'Refresh Pro access for this account' : 'Re-sync your Pro subscription on this device'}
               onPress={() => restorePermissions()}
             />
           </>
@@ -222,7 +253,7 @@ const Settings = () => {
             <CardRow
               icon="refresh-circle-outline"
               title="Restore Purchases"
-              subtitle="Already paid? Restore on this device"
+              subtitle={Platform.OS === 'web' ? 'Already paid? Refresh this account' : 'Already paid? Restore on this device'}
               onPress={() => restorePermissions()}
             />
           </>
@@ -323,8 +354,8 @@ const Settings = () => {
             })}
           </View>
         </View>
-        <Divider />
-        <View style={[styles.row, { paddingVertical: 12 }]}>
+        {Platform.OS !== 'web' && <Divider />}
+        {Platform.OS !== 'web' && <View style={[styles.row, { paddingVertical: 12 }]}>
           <View style={styles.iconSquare}>
             <Ionicons name="pulse-outline" size={20} color={Colors.blueprint} />
           </View>
@@ -344,7 +375,7 @@ const Settings = () => {
             thumbColor="#fff"
             ios_backgroundColor={Colors.stone}
           />
-        </View>
+        </View>}
       </Card>
 
       {/* Danger zone */}
@@ -362,7 +393,7 @@ const Settings = () => {
         />
       </Card>
 
-      <Text style={styles.versionStamp}>Archius · v0.1.0</Text>
+      <Text style={styles.versionStamp}>Archius · v1.0.4</Text>
     </ScrollView>
   );
 };

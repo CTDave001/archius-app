@@ -14,7 +14,7 @@ import { useAuth } from '@clerk/clerk-expo';
 import { Ionicons } from '@expo/vector-icons';
 import * as WebBrowser from 'expo-web-browser';
 import React, { useMemo, useState } from 'react';
-import { ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { Platform, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 const consentKey = (userId: string) => `consent.ai_providers.v1.${userId}`;
@@ -67,7 +67,7 @@ export const AIConsentGate = ({ children }: { children: React.ReactNode }) => {
         <Text style={styles.title}>How Archius uses AI providers</Text>
         <Text style={styles.lede}>
           Archius generates answers using external AI services. Here is exactly what leaves your
-          device and where it goes:
+          {Platform.OS === 'web' ? ' browser' : ' device'} and where it goes:
         </Text>
 
         <View style={styles.cards}>
@@ -86,7 +86,11 @@ export const AIConsentGate = ({ children }: { children: React.ReactNode }) => {
 
         <Text style={styles.note}>
           Providers process this data to answer you; Archius does not sell your data or use it to
-          train models. Chats are stored on your device, not on our servers. Details in our{' '}
+          train models.{' '}
+          {Platform.OS === 'web'
+            ? 'Web conversations are stored with your Archius account so they can sync across browsers.'
+            : 'Chats are stored on your device, not on our servers.'}{' '}
+          Details in our{' '}
           <Text
             style={styles.link}
             onPress={() => WebBrowser.openBrowserAsync('https://archius.app/privacy')}>
@@ -118,7 +122,7 @@ export const AIConsentGate = ({ children }: { children: React.ReactNode }) => {
 
 const createStyles = (Colors: AppColors) => StyleSheet.create({
   container: { flex: 1, backgroundColor: Colors.cream },
-  content: { paddingHorizontal: 24, paddingBottom: 24 },
+  content: { paddingHorizontal: 24, paddingBottom: 24, width: '100%', maxWidth: 720, alignSelf: 'center' },
   eyebrow: {
     fontFamily: 'Inter_600SemiBold',
     fontSize: 12,
@@ -178,7 +182,7 @@ const createStyles = (Colors: AppColors) => StyleSheet.create({
     lineHeight: 20,
   },
   link: { color: Colors.blueprint, textDecorationLine: 'underline' },
-  footer: { paddingHorizontal: 24, paddingTop: 8 },
+  footer: { paddingHorizontal: 24, paddingTop: 8, width: '100%', maxWidth: 720, alignSelf: 'center' },
   agreeBtn: { backgroundColor: Colors.control },
   agreeText: { fontFamily: 'Inter_600SemiBold', color: Colors.onControl, fontSize: 16 },
   declineBtn: { alignItems: 'center', paddingVertical: 14 },

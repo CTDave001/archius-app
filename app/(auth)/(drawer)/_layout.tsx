@@ -15,16 +15,12 @@ import {
   BUCKET_LABELS,
   bucketChat,
   type ChatBucket,
-  deleteChat,
-  getChats,
-  renameChat,
-  searchChats,
 } from '@/utils/Database';
+import { useChatDatabase } from '@/providers/ChatDatabase';
 import { emitChatsChanged, onChatsChanged } from '@/utils/events';
 import { Chat } from '@/utils/Interfaces';
 import { Link, useLocalSearchParams, useRouter } from 'expo-router';
 import { Drawer } from 'expo-router/drawer';
-import { useSQLiteContext } from 'expo-sqlite';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import Swipeable from 'react-native-gesture-handler/Swipeable';
 import {
@@ -122,7 +118,7 @@ export const CustomDrawerContent = (props: any) => {
   const Colors = useThemeColors();
   const styles = useMemo(() => createStyles(Colors), [Colors]);
   const { bottom, top } = useSafeAreaInsets();
-  const db = useSQLiteContext();
+  const db = useChatDatabase();
   const isDrawerOpen = useDrawerStatus() === 'open';
   type ChatRowData = Chat & { updated_at: string | null };
   const [history, setHistory] = useState<ChatRowData[]>([]);
@@ -160,7 +156,7 @@ export const CustomDrawerContent = (props: any) => {
 
   const loadChats = async () => {
     try {
-      const result = await getChats(db);
+      const result = await db.getChats();
       setHistory(result as ChatRowData[]);
     } catch (e) {
       console.warn('Failed to load chats', e);
@@ -178,7 +174,7 @@ export const CustomDrawerContent = (props: any) => {
     }
     let cancelled = false;
     const handle = setTimeout(() => {
-      searchChats(db, q)
+      db.searchChats(q)
         .then((rows) => {
           if (!cancelled) setHistory(rows as ChatRowData[]);
         })
@@ -218,7 +214,7 @@ export const CustomDrawerContent = (props: any) => {
           style: 'destructive',
           onPress: async () => {
             try {
-              await deleteChat(db, chatId);
+              await db.deleteChat(chatId);
               emitChatsChanged();
               // If we just deleted the chat the user is currently viewing,
               // bounce them to /new so they're not stuck on a dead route.
@@ -250,7 +246,7 @@ export const CustomDrawerContent = (props: any) => {
       return;
     }
     try {
-      await renameChat(db, renameTarget.id, trimmed.slice(0, 100));
+      await db.renameChat(renameTarget.id, trimmed.slice(0, 100));
       emitChatsChanged();
     } catch (e: any) {
       Alert.alert('Could not rename', e?.message ?? 'Try again later.');

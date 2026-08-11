@@ -23,7 +23,7 @@ import {
 } from '@expo-google-fonts/source-serif-4';
 import { Slot, SplashScreen, Stack, useRouter, useSegments } from 'expo-router';
 import React, { useEffect, useState } from 'react';
-import { ScrollView, Text, TouchableOpacity, View } from 'react-native';
+import { Platform, ScrollView, Text, TouchableOpacity, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 
@@ -67,7 +67,8 @@ const InitialLayout = ({ onReady }: { onReady: () => void }) => {
       <Stack.Screen
         name="login"
         options={{
-          presentation: 'modal',
+          presentation: Platform.OS === 'web' ? 'card' : 'modal',
+          headerShown: Platform.OS === 'web' ? false : undefined,
           title: '',
           headerLeft: () => (
             <TouchableOpacity
@@ -207,7 +208,7 @@ const RootLayoutNav = () => {
   });
 
   const [clerkReady, setClerkReady] = useState(false);
-  const [splashDone, setSplashDone] = useState(false);
+  const [splashDone, setSplashDone] = useState(Platform.OS === 'web');
 
   const fontsLoaded = interLoaded && serifLoaded && monoLoaded;
   // Force render after a max wait even if fonts or Clerk hang (production
@@ -257,7 +258,7 @@ const RootLayoutNav = () => {
       <GestureHandlerRootView style={{ flex: 1, backgroundColor: colors.cream }}>
         <StatusBar style={resolvedTheme === 'dark' ? 'light' : 'dark'} />
         <InitialLayout onReady={() => setClerkReady(true)} />
-        {readyToHandoff && !splashDone && (
+        {Platform.OS !== 'web' && readyToHandoff && !splashDone && (
           <ArchiusSplash onFinish={() => setSplashDone(true)} />
         )}
       </GestureHandlerRootView>

@@ -8,6 +8,7 @@ import * as WebBrowser from 'expo-web-browser';
 import { useMemo, useState } from 'react';
 import {
   ActivityIndicator,
+  Platform,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -77,7 +78,9 @@ const faqs: FaqEntry[] = [
   },
   {
     q: 'How is my data handled?',
-    a: 'Messages go to the AI providers (DeepSeek for text, Google for images) to generate responses. Your chat history is stored on your device, not on our servers. We never sell your data. See our Privacy Policy for details.',
+    a: Platform.OS === 'web'
+      ? 'Messages go to the AI providers (DeepSeek for text, Google for images) to generate responses. Web chat history is encrypted in transit and stored with your account so it can sync across browsers. We never sell your data.'
+      : 'Messages go to the AI providers (DeepSeek for text, Google for images) to generate responses. Your chat history is stored on your device. We never sell your data. See our Privacy Policy for details.',
   },
   {
     q: 'What models does Pro use?',
@@ -85,7 +88,9 @@ const faqs: FaqEntry[] = [
   },
   {
     q: 'Will my chats sync across devices?',
-    a: 'Today your chats live on the device you sent them from. Cross-device sync is on the roadmap for v1.1.',
+    a: Platform.OS === 'web'
+      ? 'Web conversations sync to your Archius account across supported browsers. iPhone history remains device-local for the current App Store release.'
+      : 'Today your iPhone chats live on this device. Web account sync is available in the browser app.',
   },
 ];
 
@@ -136,7 +141,7 @@ const Paywall = () => {
 
   return (
     <View style={[defaultStyles.pageContainer, { paddingBottom: bottom, backgroundColor: Colors.cream }]}>
-      <ScrollView contentContainerStyle={styles.content}>
+      <ScrollView contentContainerStyle={[styles.content, Platform.OS === 'web' && styles.webContent]}>
         <Text style={[eyebrow, { marginBottom: 8, color: Colors.blueprint }]}>Pro</Text>
         <Text style={styles.heading}>
           AI that <Text style={styles.headingItalic}>actually</Text> works
@@ -220,8 +225,10 @@ const Paywall = () => {
         </View>
 
         <Text style={styles.disclosure}>
-          {AUTO_RENEW_DISCLOSURE} Manage or cancel through your Apple ID (iOS) or Google Play
-          account (Android). Refunds are handled by Apple or Google.
+          {AUTO_RENEW_DISCLOSURE}{' '}
+          {Platform.OS === 'web'
+            ? 'Manage or cancel from your web billing portal. Web billing is processed securely by RevenueCat and its payment provider.'
+            : 'Manage or cancel through your Apple ID (iOS) or Google Play account (Android). Refunds are handled by Apple or Google.'}
         </Text>
       </ScrollView>
 
@@ -286,6 +293,7 @@ const Paywall = () => {
 
 const createStyles = (Colors: AppColors) => StyleSheet.create({
   content: { padding: 24, paddingBottom: 40 },
+  webContent: { width: '100%', maxWidth: 760, alignSelf: 'center', paddingTop: 40 },
   heading: {
     fontFamily: 'SourceSerif4_300Light',
     fontSize: 34,

@@ -215,6 +215,16 @@ const MessageInput = forwardRef<MessageInputHandle, Props>(function MessageInput
           style={styles.messageInput}
           onChangeText={setMessage}
           onSubmitEditing={onSubmit}
+          onKeyPress={(event: any) => {
+            if (
+              Platform.OS === 'web' &&
+              event?.nativeEvent?.key === 'Enter' &&
+              !event?.nativeEvent?.shiftKey
+            ) {
+              event.preventDefault?.();
+              onSubmit();
+            }
+          }}
           blurOnSubmit={false}
           value={message}
           multiline
