@@ -1,5 +1,5 @@
 import type { AppColors } from '@/constants/Colors';
-import { useThemeColors } from '@/providers/Theme';
+import { useAppTheme } from '@/providers/Theme';
 import { useAuth } from '@clerk/clerk-expo';
 import { Ionicons } from '@expo/vector-icons';
 import { Stack, useRouter } from 'expo-router';
@@ -50,7 +50,7 @@ const ScopeDbToUser = ({ children }: { children: React.ReactNode }) => {
 
 const Layout = () => {
   const router = useRouter();
-  const Colors = useThemeColors();
+  const { colors: Colors, resolvedTheme } = useAppTheme();
   const styles = React.useMemo(() => createStyles(Colors), [Colors]);
 
   return (
@@ -59,6 +59,10 @@ const Layout = () => {
         <ScopeDbToUser>
         <AIConsentGate>
         <Stack
+          // Native modal headers can retain their presentation-time colors.
+          // Remount the navigator on an appearance change so Settings updates
+          // its header and rounded sheet chrome immediately, without reopen.
+          key={resolvedTheme}
           screenOptions={{
             // Match the page background so the slide transition doesn't
             // flash a different surface color in/out.

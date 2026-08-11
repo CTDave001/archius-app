@@ -117,7 +117,7 @@ const MessageInput = forwardRef<MessageInputHandle, Props>(function MessageInput
     backgroundColor: interpolateColor(
       progress.value,
       [0, 1, 2],
-      [Colors.stoneDark, Colors.blueprint, Colors.controlPressed]
+      [Colors.controlDisabled, Colors.control, Colors.controlPressed]
     ),
     transform: [{ scale: 0.92 + Math.min(progress.value, 1) * 0.08 }],
   }));
@@ -228,7 +228,7 @@ const MessageInput = forwardRef<MessageInputHandle, Props>(function MessageInput
           <Ionicons
             name={isStreaming ? 'stop' : 'arrow-up'}
             size={isStreaming ? 16 : 20}
-            color={Colors.onControl}
+            color={actionDisabled ? Colors.onControlDisabled : Colors.onControl}
           />
         </AnimatedTouchable>
       </View>

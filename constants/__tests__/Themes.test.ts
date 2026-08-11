@@ -27,7 +27,11 @@ describe('theme palettes', () => {
   it('maintains accessible contrast for primary dark-theme content', () => {
     expect(contrast(DarkColors.graphite, DarkColors.cream)).toBeGreaterThanOrEqual(7);
     expect(contrast(DarkColors.slate, DarkColors.cream)).toBeGreaterThanOrEqual(4.5);
+    expect(contrast(DarkColors.blueprint, DarkColors.cream)).toBeGreaterThanOrEqual(4.5);
     expect(contrast(DarkColors.onControl, DarkColors.control)).toBeGreaterThanOrEqual(4.5);
+    expect(
+      contrast(DarkColors.onControlDisabled, DarkColors.controlDisabled)
+    ).toBeGreaterThanOrEqual(3);
     expect(contrast(DarkColors.onUserBubble, DarkColors.userBubble)).toBeGreaterThanOrEqual(4.5);
   });
 });

@@ -45,6 +45,8 @@ const tokens = {
   control: '#1F4458',
   controlPressed: '#122A39',
   onControl: '#FFFFFF',
+  controlDisabled: '#E8E4DB',
+  onControlDisabled: '#64748B',
   userBubble: '#F4F1EA',
   onUserBubble: '#1A1D21',
   composerGlass: 'rgba(250, 248, 243, 0.88)',

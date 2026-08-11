@@ -13,7 +13,7 @@
       "dark": {
         "image": "./assets/monochrome.png",
         "resizeMode": "contain",
-        "backgroundColor": "#0E161A"
+        "backgroundColor": "#091317"
       }
     },
     "assetBundlePatterns": [
