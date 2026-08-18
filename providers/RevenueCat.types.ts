@@ -1,3 +1,5 @@
+import type { SubscriptionSource } from '@/utils/subscription';
+
 export type ArchiusPackage = {
   identifier: string;
   product: {
@@ -11,6 +13,8 @@ export type ArchiusPackage = {
 
 export interface RevenueCatContextValue {
   isPro: boolean;
+  managementURL: string | null;
+  subscriptionSource: SubscriptionSource;
   packages: ArchiusPackage[];
   purchasePackage: (pack: ArchiusPackage) => Promise<void>;
   restorePermissions: () => Promise<unknown>;

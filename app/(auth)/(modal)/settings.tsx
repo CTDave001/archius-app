@@ -9,6 +9,7 @@ import { resolveApiBaseUrl } from '@/utils/apiUrl';
 import { useChatDatabase } from '@/providers/ChatDatabase';
 import { emitChatsChanged } from '@/utils/events';
 import { isHapticsEnabled, setHapticsEnabled } from '@/utils/haptics';
+import { subscriptionSourceDescription } from '@/utils/subscription';
 import { useAuth, useUser } from '@clerk/clerk-expo';
 import { Ionicons } from '@expo/vector-icons';
 import { Link } from 'expo-router';
@@ -40,7 +41,7 @@ const Settings = () => {
   const styles = useMemo(() => createStyles(Colors), [Colors]);
   const { signOut, getToken, userId } = useAuth({ treatPendingAsSignedOut: false });
   const { user } = useUser();
-  const { isPro, restorePermissions } = useRevenueCat();
+  const { isPro, managementURL, subscriptionSource, restorePermissions } = useRevenueCat();
   const db = useChatDatabase();
   const [usage, setUsage] = useState<{ used: number; limit: number } | null>(null);
   const [hapticsOn, setHapticsOn] = useState<boolean>(isHapticsEnabled());
@@ -91,11 +92,12 @@ const Settings = () => {
 
   const onManageSubscription = async () => {
     const url =
-      Platform.OS === 'web'
+      managementURL ??
+      (Platform.OS === 'web'
         ? WEB_CUSTOMER_PORTAL_URL
         : Platform.OS === 'ios'
           ? APPLE_SUBSCRIPTIONS_URL
-          : GOOGLE_SUBSCRIPTIONS_URL;
+          : GOOGLE_SUBSCRIPTIONS_URL);
     if (!url) {
       Alert.alert(
         'Manage subscription',
@@ -224,9 +226,7 @@ const Settings = () => {
               icon="card-outline"
               title="Manage Subscription"
               subtitle={
-                Platform.OS === 'web'
-                  ? 'Open billing settings for your web plan'
-                  : 'Cancel or change plan through your device account'
+                subscriptionSourceDescription(subscriptionSource)
               }
               onPress={onManageSubscription}
             />

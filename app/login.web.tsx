@@ -55,6 +55,13 @@ export default function WebLogin() {
         <View style={styles.clerkWrap}>
           <Text style={styles.welcome}>Welcome to Archius</Text>
           <Text style={styles.welcomeSub}>Sign in or create an account to continue.</Text>
+          <View style={styles.accountHint}>
+            <Ionicons name="sync-outline" size={16} color={Colors.blueprint} />
+            <Text style={styles.accountHintText}>
+              Already use Archius on iPhone? Use the same Archius sign-in here to bring your Pro
+              access with you.
+            </Text>
+          </View>
           <SignIn
             routing="hash"
             appearance={{
@@ -108,5 +115,7 @@ const createStyles = (Colors: AppColors) => StyleSheet.create({
   clerkWrap: { width: '100%', maxWidth: 470, alignSelf: 'center', paddingHorizontal: 24, paddingTop: 28, paddingBottom: 48 },
   welcome: { fontFamily: 'SourceSerif4_300Light', fontSize: 34, color: Colors.ink, textAlign: 'center', marginBottom: 7 },
   welcomeSub: { fontFamily: 'Inter_400Regular', fontSize: 14, color: Colors.slate, textAlign: 'center', marginBottom: 24 },
+  accountHint: { flexDirection: 'row', alignItems: 'flex-start', gap: 9, padding: 12, marginBottom: 16, borderWidth: 1, borderColor: Colors.blueprintTint20, borderRadius: 12, backgroundColor: Colors.blueprintTint10 },
+  accountHintText: { flex: 1, fontFamily: 'Inter_400Regular', fontSize: 12, lineHeight: 18, color: Colors.graphite },
   securityNote: { fontFamily: 'Inter_400Regular', fontSize: 11, color: Colors.slateSoft, textAlign: 'center', marginTop: 16 },
 });

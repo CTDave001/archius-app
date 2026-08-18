@@ -73,8 +73,12 @@ type FaqEntry = {
 
 const faqs: FaqEntry[] = [
   {
+    q: 'Does Pro work on iPhone and the web?',
+    a: 'Yes. Archius Pro is one membership across platforms. Sign in with the same Archius account everywhere and your access follows you, no matter where you originally subscribed.',
+  },
+  {
     q: 'Can I cancel anytime?',
-    a: "Yes. Open your Apple ID or Google Play subscription settings and tap cancel. You'll keep Pro until the end of your current billing period.",
+    a: "Yes. Open Settings in Archius and choose Manage Subscription. We'll send you to the store where you originally subscribed. You'll keep Pro until the end of your current billing period.",
   },
   {
     q: 'How is my data handled?',
@@ -102,7 +106,7 @@ const Paywall = () => {
   const styles = useMemo(() => createStyles(Colors), [Colors]);
   const { bottom } = useSafeAreaInsets();
   const router = useRouter();
-  const { packages, purchasePackage, restorePermissions } = useRevenueCat();
+  const { isPro, packages, purchasePackage, restorePermissions } = useRevenueCat();
   const [purchasing, setPurchasing] = useState(false);
   const [restoring, setRestoring] = useState(false);
   const [openFaq, setOpenFaq] = useState<number | null>(null);
@@ -115,6 +119,10 @@ const Paywall = () => {
   const price = pack?.product.priceString ?? '$12';
 
   const onPurchase = async () => {
+    if (isPro) {
+      router.dismiss();
+      return;
+    }
     if (!pack) return;
     setPurchasing(true);
     try {
@@ -147,6 +155,19 @@ const Paywall = () => {
           AI that <Text style={styles.headingItalic}>actually</Text> works
         </Text>
         <Text style={styles.subheading}>Real answers. Higher daily limits.</Text>
+
+        {isPro && (
+          <View style={styles.activeBanner}>
+            <Ionicons name="checkmark-circle" size={22} color={Colors.blueprint} />
+            <View style={{ flex: 1 }}>
+              <Text style={styles.activeTitle}>Pro is already active</Text>
+              <Text style={styles.activeText}>
+                This Archius account is covered on iPhone and the web. You do not need to subscribe
+                again.
+              </Text>
+            </View>
+          </View>
+        )}
 
         {/* Benefit cards */}
         <View style={styles.benefits}>
@@ -233,7 +254,15 @@ const Paywall = () => {
       </ScrollView>
 
       <View style={[styles.footer, { paddingBottom: Math.max(bottom, 16) }]}>
-        {!pack ? (
+        {isPro ? (
+          <TouchableOpacity
+            style={[defaultStyles.btn, styles.cta]}
+            onPress={() => router.dismiss()}
+            accessibilityLabel="Continue with active Archius Pro membership"
+            accessibilityRole="button">
+            <Text style={styles.ctaText}>Continue with Pro</Text>
+          </TouchableOpacity>
+        ) : !pack ? (
           <View style={styles.unavailableNote}>
             <Text style={styles.unavailableText}>
               In-app purchases aren't configured yet. Try again after launch.
@@ -262,16 +291,18 @@ const Paywall = () => {
           <Text style={styles.maybeLaterText}>Maybe later</Text>
         </TouchableOpacity>
 
-        <TouchableOpacity
-          style={styles.restore}
-          disabled={restoring}
-          onPress={onRestore}
-          accessibilityLabel="Restore purchases"
-          accessibilityRole="button">
-          <Text style={styles.restoreText}>
-            {restoring ? 'Restoring…' : 'Restore Purchases'}
-          </Text>
-        </TouchableOpacity>
+        {!isPro && (
+          <TouchableOpacity
+            style={styles.restore}
+            disabled={restoring}
+            onPress={onRestore}
+            accessibilityLabel="Restore purchases"
+            accessibilityRole="button">
+            <Text style={styles.restoreText}>
+              {restoring ? 'Restoring…' : 'Restore Purchases'}
+            </Text>
+          </TouchableOpacity>
+        )}
 
         <View style={styles.legalRow}>
           <TouchableOpacity
@@ -310,6 +341,29 @@ const createStyles = (Colors: AppColors) => StyleSheet.create({
     fontSize: 16,
     color: Colors.slate,
     marginBottom: 24,
+  },
+  activeBanner: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 11,
+    padding: 14,
+    marginBottom: 20,
+    backgroundColor: Colors.blueprintTint10,
+    borderWidth: 1,
+    borderColor: Colors.blueprintTint20,
+    borderRadius: 14,
+  },
+  activeTitle: {
+    fontFamily: 'Inter_600SemiBold',
+    fontSize: 14,
+    color: Colors.graphite,
+  },
+  activeText: {
+    fontFamily: 'Inter_400Regular',
+    fontSize: 12,
+    lineHeight: 18,
+    color: Colors.slate,
+    marginTop: 2,
   },
   benefits: { gap: 10, marginBottom: 28 },
   benefitCard: {

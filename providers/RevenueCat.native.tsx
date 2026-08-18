@@ -7,6 +7,10 @@ import Purchases, {
   type PurchasesPackage,
 } from 'react-native-purchases';
 import type { ArchiusPackage, RevenueCatContextValue } from '@/providers/RevenueCat.types';
+import {
+  subscriptionStateFromCustomerInfo,
+  type SubscriptionSource,
+} from '@/utils/subscription';
 
 const APIKeys = {
   apple: process.env.EXPO_PUBLIC_RC_APPLE_KEY as string,
@@ -22,9 +26,6 @@ export const useRevenueCat = (): RevenueCatContextValue => {
   if (!ctx) throw new Error('useRevenueCat must be used within RevenueCatProvider');
   return ctx;
 };
-
-const hasProEntitlement = (info: CustomerInfo) =>
-  info.entitlements.active[PRO_ENTITLEMENT_ID] !== undefined;
 
 const normalizePackage = (pack: PurchasesPackage): ArchiusPackage => ({
   identifier: pack.identifier,
@@ -46,12 +47,21 @@ const withTimeout = <T,>(promise: Promise<T>, ms: number): Promise<T> =>
 
 export const RevenueCatProvider = ({ children }: { children: React.ReactNode }) => {
   const [isPro, setIsPro] = useState(false);
+  const [managementURL, setManagementURL] = useState<string | null>(null);
+  const [subscriptionSource, setSubscriptionSource] = useState<SubscriptionSource>(null);
   const [packages, setPackages] = useState<ArchiusPackage[]>([]);
   const [isReady, setIsReady] = useState(false);
   const [isConfigured, setIsConfigured] = useState(false);
   const { userId: clerkUserId } = useAuth({ treatPendingAsSignedOut: false });
   const { user } = useUser();
   const listenerRef = useRef<((info: CustomerInfo) => void) | null>(null);
+
+  const applyCustomerInfo = (info: CustomerInfo) => {
+    const state = subscriptionStateFromCustomerInfo(info, PRO_ENTITLEMENT_ID);
+    setIsPro(state.isPro);
+    setManagementURL(state.managementURL);
+    setSubscriptionSource(state.subscriptionSource);
+  };
 
   useEffect(() => {
     let cancelled = false;
@@ -66,7 +76,7 @@ export const RevenueCatProvider = ({ children }: { children: React.ReactNode }) 
         if (__DEV__) Purchases.setLogLevel(LOG_LEVEL.DEBUG);
 
         const listener = (info: CustomerInfo) => {
-          if (!cancelled) setIsPro(hasProEntitlement(info));
+          if (!cancelled) applyCustomerInfo(info);
         };
         listenerRef.current = listener;
         Purchases.addCustomerInfoUpdateListener(listener);
@@ -80,7 +90,7 @@ export const RevenueCatProvider = ({ children }: { children: React.ReactNode }) 
           setPackages(offeringsResult.value.current.availablePackages.map(normalizePackage));
         }
         if (customerInfoResult.status === 'fulfilled') {
-          setIsPro(hasProEntitlement(customerInfoResult.value));
+          applyCustomerInfo(customerInfoResult.value);
         }
       } catch (error) {
         console.warn('RevenueCat init failed', error);
@@ -114,12 +124,16 @@ export const RevenueCatProvider = ({ children }: { children: React.ReactNode }) 
       try {
         if (clerkUserId) {
           const result = await Purchases.logIn(clerkUserId);
-          if (!cancelled) setIsPro(hasProEntitlement(result.customerInfo));
+          if (!cancelled) applyCustomerInfo(result.customerInfo);
           const email = user?.primaryEmailAddress?.emailAddress;
           if (email) await Purchases.setAttributes({ $email: email, clerk_user_id: clerkUserId });
         } else {
           await Purchases.logOut();
-          if (!cancelled) setIsPro(false);
+          if (!cancelled) {
+            setIsPro(false);
+            setManagementURL(null);
+            setSubscriptionSource(null);
+          }
         }
       } catch (error) {
         console.warn('RevenueCat alias sync failed', error);
@@ -134,8 +148,11 @@ export const RevenueCatProvider = ({ children }: { children: React.ReactNode }) 
   const purchasePackage = async (pack: ArchiusPackage) => {
     if (!pack.nativePackage) throw new Error('This purchase is not available.');
     try {
+      if (clerkUserId && (await Purchases.getAppUserID()) !== clerkUserId) {
+        await Purchases.logIn(clerkUserId);
+      }
       const result = await Purchases.purchasePackage(pack.nativePackage as PurchasesPackage);
-      setIsPro(hasProEntitlement(result.customerInfo));
+      applyCustomerInfo(result.customerInfo);
       await user?.reload().catch(() => undefined);
     } catch (error: any) {
       if (!error?.userCancelled) Alert.alert('Purchase failed', error?.message ?? 'Try again later.');
@@ -145,9 +162,12 @@ export const RevenueCatProvider = ({ children }: { children: React.ReactNode }) 
 
   const restorePermissions = async () => {
     try {
+      if (clerkUserId && (await Purchases.getAppUserID()) !== clerkUserId) {
+        await Purchases.logIn(clerkUserId);
+      }
       const customer = await Purchases.restorePurchases();
-      const restored = hasProEntitlement(customer);
-      setIsPro(restored);
+      const restored = subscriptionStateFromCustomerInfo(customer, PRO_ENTITLEMENT_ID).isPro;
+      applyCustomerInfo(customer);
       await user?.reload().catch(() => undefined);
       Alert.alert(
         restored ? 'Restored' : 'No active subscription',
@@ -166,7 +186,14 @@ export const RevenueCatProvider = ({ children }: { children: React.ReactNode }) 
   const clerkIsPro = (user?.publicMetadata as any)?.isPro === true;
   return (
     <RevenueCatContext.Provider
-      value={{ isPro: isPro || clerkIsPro, packages, purchasePackage, restorePermissions }}>
+      value={{
+        isPro: isPro || clerkIsPro,
+        managementURL,
+        subscriptionSource,
+        packages,
+        purchasePackage,
+        restorePermissions,
+      }}>
       {children}
     </RevenueCatContext.Provider>
   );

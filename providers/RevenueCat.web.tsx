@@ -2,6 +2,10 @@ import { useAuth, useUser } from '@clerk/clerk-expo';
 import { PackageType, Purchases, type CustomerInfo, type Package } from '@revenuecat/purchases-js';
 import { createContext, useContext, useEffect, useRef, useState } from 'react';
 import type { ArchiusPackage, RevenueCatContextValue } from '@/providers/RevenueCat.types';
+import {
+  subscriptionStateFromCustomerInfo,
+  type SubscriptionSource,
+} from '@/utils/subscription';
 
 export const PRO_ENTITLEMENT_ID = 'pro';
 const WEB_API_KEY = process.env.EXPO_PUBLIC_RC_WEB_KEY?.trim();
@@ -12,9 +16,6 @@ export const useRevenueCat = (): RevenueCatContextValue => {
   if (!ctx) throw new Error('useRevenueCat must be used within RevenueCatProvider');
   return ctx;
 };
-
-const hasProEntitlement = (info: CustomerInfo) =>
-  info.entitlements.active[PRO_ENTITLEMENT_ID] !== undefined;
 
 const normalizePackage = (pack: Package): ArchiusPackage => ({
   identifier: pack.identifier,
@@ -38,13 +39,25 @@ export const RevenueCatProvider = ({ children }: { children: React.ReactNode }) 
   const { user } = useUser();
   const purchasesRef = useRef<Purchases | null>(null);
   const [isPro, setIsPro] = useState(false);
+  const [managementURL, setManagementURL] = useState<string | null>(null);
+  const [subscriptionSource, setSubscriptionSource] = useState<SubscriptionSource>(null);
   const [packages, setPackages] = useState<ArchiusPackage[]>([]);
   const [ready, setReady] = useState(false);
+
+  const applyCustomerInfo = (info: CustomerInfo) => {
+    const state = subscriptionStateFromCustomerInfo(info, PRO_ENTITLEMENT_ID);
+    setIsPro(state.isPro);
+    setManagementURL(state.managementURL);
+    setSubscriptionSource(state.subscriptionSource);
+  };
 
   useEffect(() => {
     let cancelled = false;
     const init = async () => {
       if (!WEB_API_KEY || !userId) {
+        setIsPro(false);
+        setManagementURL(null);
+        setSubscriptionSource(null);
         setReady(true);
         return;
       }
@@ -69,7 +82,7 @@ export const RevenueCatProvider = ({ children }: { children: React.ReactNode }) 
         ]);
         if (cancelled) return;
         setPackages((offerings.current?.availablePackages ?? []).map(normalizePackage));
-        setIsPro(hasProEntitlement(customerInfo));
+        applyCustomerInfo(customerInfo);
       } catch (error) {
         console.warn('RevenueCat web init failed', error);
       } finally {
@@ -84,13 +97,16 @@ export const RevenueCatProvider = ({ children }: { children: React.ReactNode }) 
 
   const purchasePackage = async (pack: ArchiusPackage) => {
     const purchases = purchasesRef.current;
-    if (!purchases || !pack.webPackage) throw new Error('Web checkout is not configured yet.');
+    if (!purchases || !pack.webPackage || !userId) {
+      throw new Error('Web checkout is not configured yet.');
+    }
     try {
+      if (purchases.getAppUserId() !== userId) await purchases.changeUser(userId);
       const result = await purchases.purchase({
         rcPackage: pack.webPackage as Package,
         customerEmail: user?.primaryEmailAddress?.emailAddress,
       });
-      setIsPro(hasProEntitlement(result.customerInfo));
+      applyCustomerInfo(result.customerInfo);
       await user?.reload().catch(() => undefined);
     } catch (error: any) {
       if (error?.errorCode !== 'UserCancelledError') {
@@ -108,8 +124,11 @@ export const RevenueCatProvider = ({ children }: { children: React.ReactNode }) 
     }
     try {
       const customerInfo = await purchases.getCustomerInfo();
-      const restored = hasProEntitlement(customerInfo);
-      setIsPro(restored);
+      const restored = subscriptionStateFromCustomerInfo(
+        customerInfo,
+        PRO_ENTITLEMENT_ID
+      ).isPro;
+      applyCustomerInfo(customerInfo);
       await user?.reload().catch(() => undefined);
       showMessage(
         restored
@@ -127,7 +146,14 @@ export const RevenueCatProvider = ({ children }: { children: React.ReactNode }) 
   const clerkIsPro = (user?.publicMetadata as any)?.isPro === true;
   return (
     <RevenueCatContext.Provider
-      value={{ isPro: isPro || clerkIsPro, packages, purchasePackage, restorePermissions }}>
+      value={{
+        isPro: isPro || clerkIsPro,
+        managementURL,
+        subscriptionSource,
+        packages,
+        purchasePackage,
+        restorePermissions,
+      }}>
       {children}
     </RevenueCatContext.Provider>
   );
